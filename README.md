@@ -4,7 +4,7 @@ A full-stack mobile application that allows users to search, preview, and downlo
 
 ---
 
-## 🚀 Features
+## Features
 
 * **Search YouTube videos** using keywords
 * **Paste direct YouTube links** for instant access
@@ -17,7 +17,7 @@ A full-stack mobile application that allows users to search, preview, and downlo
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 ### Frontend
 
@@ -34,9 +34,9 @@ A full-stack mobile application that allows users to search, preview, and downlo
 
 ---
 
-## ⚙️ Setup Instructions
+##  Setup Instructions
 
-### 🔹 1. Clone Repository
+###  1. Clone Repository
 
 ```bash
 git clone https://github.com/yourusername/yt-downloader.git
@@ -45,7 +45,7 @@ cd yt-downloader
 
 ---
 
-## 🧠 Backend Setup (FastAPI)
+## Backend Setup (FastAPI)
 
 ### Install dependencies
 
@@ -67,7 +67,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 ---
 
-## 📱 Frontend Setup (Flutter)
+## Frontend Setup (Flutter)
 
 ### Install dependencies
 
@@ -84,7 +84,7 @@ flutter run
 
 ---
 
-## 📦 Build APK
+## Build APK
 
 ```bash
 flutter build apk --release
@@ -98,7 +98,7 @@ build/app/outputs/flutter-apk/app-release.apk
 
 ---
 
-## ⚠️ Notes
+## Notes
 
 * Requires internet connection
 * YouTube extraction depends on yt-dlp updates
