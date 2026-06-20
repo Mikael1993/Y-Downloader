@@ -16,8 +16,27 @@ class AppColors {
   static const muted = Colors.grey;
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late Color _accentColor;
+
+  @override
+  void initState() {
+    super.initState();
+    _accentColor = Color(StorageService.getAccentColor());
+  }
+
+  void _updateAccentColor(Color color) {
+    setState(() {
+      _accentColor = color;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +47,7 @@ class MyApp extends StatelessWidget {
         scaffoldBackgroundColor: AppColors.bg,
         fontFamily: 'Mono',
         colorScheme: ColorScheme.dark(
-          primary: AppColors.accent,
+          primary: _accentColor,
           secondary: AppColors.card,
           surface: AppColors.card,
         ),
@@ -47,7 +66,7 @@ class MyApp extends StatelessWidget {
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.accent,
+            backgroundColor: _accentColor,
             foregroundColor: Colors.white,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
@@ -62,7 +81,10 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      home: MainScreen(),
+      home: MainScreen(
+        accentColor: _accentColor,
+        onAccentColorChanged: _updateAccentColor,
+      ),
     );
   }
 }

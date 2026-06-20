@@ -28,10 +28,8 @@ class _RingPainter extends CustomPainter {
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
 
-    // full background circle
     canvas.drawArc(rect, 0, 2 * math.pi, false, bgPaint);
 
-    // foreground arc starting at top (-90 degrees)
     final start = -math.pi / 2;
     final sweep = (progress.clamp(0.0, 1.0)) * 2 * math.pi;
     canvas.drawArc(rect, start, sweep, false, fgPaint);
@@ -49,48 +47,62 @@ class DownloadDetailScreen extends StatefulWidget {
   const DownloadDetailScreen({super.key, required this.job});
 
   @override
-  State<DownloadDetailScreen> createState() =>
-      _DownloadDetailScreenState();
+  State<DownloadDetailScreen> createState() => _DownloadDetailScreenState();
 }
 
 class _DownloadDetailScreenState extends State<DownloadDetailScreen> {
   late Map<String, dynamic> jobState;
   Timer? timer;
 
-  bool highQuality = true;
-  bool stayAwake = false;
-
   @override
   void initState() {
     super.initState();
-    jobState = Map.from(widget.job);
+    // Bind directly to the passed reference so updates propagate to the parent list
+    jobState = widget.job;
     startPolling();
   }
 
   void startPolling() {
-    timer = Timer.periodic(Duration(milliseconds: 500), (_) async {
-      final data =
-          await ApiService.getProgress(jobState["job_id"]);
+    final status = jobState["status"]?.toString().toLowerCase() ?? "";
+    if (status == "completed" || status == "error" || status == "cancelled") {
+      return;
+    }
 
-      if (!mounted) return;
+    timer = Timer.periodic(Duration(milliseconds: 600), (_) async {
+      try {
+        final data = await ApiService.getProgress(jobState["job_id"]);
 
-      setState(() {
-        jobState["progress"] =
-            (data["progress"] ?? 0) / 100;
+        if (!mounted) return;
 
-        if (data["status"] == "processing") {
-          jobState["progress"] = 0.95;
+        setState(() {
+          jobState["progress"] = (data["progress"] ?? 0) / 100;
+
+          if (data["status"] == "processing") {
+            jobState["progress"] = 0.95;
+          }
+
+          jobState["status"] = data["status"];
+          jobState["speed"] = data["speed"] ?? 0;
+          jobState["eta"] = data["eta"] ?? 0;
+          jobState["downloaded"] = data["downloaded"] ?? 0;
+          jobState["total"] = data["total"] ?? 0;
+        });
+
+        if (data["status"] == "completed" ||
+            data["status"] == "error" ||
+            data["status"] == "cancelled") {
+          timer?.cancel();
         }
-
-        jobState["status"] = data["status"];
-        jobState["speed"] = data["speed"] ?? 0;
-        jobState["eta"] = data["eta"] ?? 0;
-      });
-
-      if (data["status"] == "completed" ||
-          data["status"] == "error" ||
-          data["status"] == "cancelled") {
-        timer?.cancel();
+      } catch (e) {
+        if (!mounted) return;
+        // Handle 404 or other errors gracefully
+        if (e.toString().contains("404") || e.toString().contains("not found")) {
+          setState(() {
+            jobState["status"] = "error";
+            jobState["error_message"] = "Job not found on server";
+          });
+          timer?.cancel();
+        }
       }
     });
   }
@@ -103,300 +115,330 @@ class _DownloadDetailScreenState extends State<DownloadDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = Color(0xFFFF2D2D);
+    final accent = Theme.of(context).colorScheme.primary;
     final progress = jobState["progress"] ?? 0.0;
+    final status = jobState["status"]?.toString().toLowerCase() ?? "";
     final speedMbps = ((jobState["speed"] ?? 0) / (1024 * 1024)).toDouble();
     final screenWidth = MediaQuery.of(context).size.width;
     final progressSize = math.min(320.0, math.max(260.0, screenWidth - 72));
     final innerSize = progressSize - 56;
 
+    final isActive = status == "starting" || 
+        status == "downloading" || 
+        status == "processing";
+
     return Scaffold(
       backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          "DOWNLOAD DETAILS",
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 2,
+            color: Colors.white70,
+          ),
+        ),
+        centerTitle: true,
+      ),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) => SingleChildScrollView(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              constraints: BoxConstraints(minHeight: constraints.maxHeight - 80),
               child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  Column(
                     children: [
-                      Icon(Icons.menu),
-                      Expanded(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            "NOTHING DOWNLOAD",
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(letterSpacing: 2, fontSize: 12),
-                          ),
+                      SizedBox(height: 12),
+
+                      /// RADIAL PROGRESS
+                      SizedBox(
+                        height: progressSize,
+                        width: progressSize,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            CustomPaint(
+                              size: Size(progressSize, progressSize),
+                              painter: _RingPainter(
+                                progress: progress,
+                                color: accent,
+                                strokeWidth: 16,
+                              ),
+                            ),
+                            Container(
+                              height: innerSize,
+                              width: innerSize,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Color(0xFF101010),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      "${(progress * 100).toInt()}",
+                                      style: TextStyle(
+                                        fontSize: 82,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    "PERCENT",
+                                    style: TextStyle(
+                                      letterSpacing: 2,
+                                      color: accent,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                  SizedBox(height: 8),
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        height: 6,
+                                        width: 6,
+                                        decoration: BoxDecoration(
+                                          color: status == "completed" 
+                                              ? Colors.greenAccent 
+                                              : status == "error" 
+                                                  ? Colors.redAccent 
+                                                  : accent,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      SizedBox(width: 8),
+                                      Flexible(
+                                        child: Text(
+                                          status.toUpperCase(),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white54,
+                                            letterSpacing: 1,
+                                          ),
+                                        ),
+                                      )
+                                    ],
+                                  )
+                                ],
+                              ),
+                            )
+                          ],
                         ),
                       ),
-                      Icon(Icons.grid_view_rounded, size: 18),
-                    ],
-                  ),
 
-                  SizedBox(height: 24),
+                      SizedBox(height: 32),
 
-                  SizedBox(
-                    height: progressSize,
-                    width: progressSize,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        CustomPaint(
-                          size: Size(progressSize, progressSize),
-                          painter: _RingPainter(
-                            progress: progress,
-                            color: accent,
-                            strokeWidth: 16,
-                          ),
+                      /// DETAILS CARD
+                      Container(
+                        padding: EdgeInsets.all(20),
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(24),
+                          color: Color(0xFF161618),
                         ),
-                        Container(
-                          height: innerSize,
-                          width: innerSize,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Color(0xFF101010),
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text(
-                                  "${(progress * 100).toInt()}",
-                                  style: TextStyle(
-                                    fontSize: 82,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              jobState["title"] ?? "No Title",
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                                color: Colors.white,
                               ),
-                              SizedBox(height: 4),
-                              Text(
-                                "PERCENT",
-                                style: TextStyle(
-                                  letterSpacing: 2,
-                                  color: accent,
-                                  fontSize: 10,
-                                ),
+                            ),
+                            SizedBox(height: 16),
+                            
+                            if (isActive) ...[
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          "${speedMbps.toStringAsFixed(1)} MB/s",
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        Text(
+                                          "CURRENT SPEED",
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.white54,
+                                          ),
+                                        )
+                                      ],
+                                    ),
+                                  ),
+                                  SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          "${jobState["eta"] ?? 0}s",
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            color: accent,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        Text(
+                                          "TIME REMAINING",
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          textAlign: TextAlign.end,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.white54,
+                                          ),
+                                        )
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              )
+                            ] else ...[
+                              Divider(color: Colors.white12, height: 24),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text("FORMAT", style: TextStyle(color: Colors.white54, fontSize: 12)),
+                                  Text(
+                                    (jobState["format_type"] ?? "mp3").toString().toUpperCase(),
+                                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                                  ),
+                                ],
                               ),
                               SizedBox(height: 8),
                               Row(
-                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Container(
-                                    height: 6,
-                                    width: 6,
-                                    decoration: BoxDecoration(
-                                      color: accent,
-                                      shape: BoxShape.circle,
+                                  Text("STORAGE STATUS", style: TextStyle(color: Colors.white54, fontSize: 12)),
+                                  Text(
+                                    jobState["save_status"] == "saved_to_phone"
+                                        ? "Saved to Phone"
+                                        : jobState["save_status"] == "saving_to_phone"
+                                            ? "Saving..."
+                                            : "Cached on Server",
+                                    style: TextStyle(
+                                      color: jobState["save_status"] == "saved_to_phone" 
+                                          ? Colors.greenAccent 
+                                          : Colors.white70, 
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
                                     ),
                                   ),
-                                  SizedBox(width: 8),
-                                  Flexible(
-                                    child: Text(
-                                      jobState["status"] ?? "DOWNLOADING",
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: Colors.white54,
-                                      ),
-                                    ),
-                                  )
                                 ],
-                              )
+                              ),
+                              if (status == "error" && jobState["error_message"] != null) ...[
+                                SizedBox(height: 12),
+                                Container(
+                                  width: double.infinity,
+                                  padding: EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.red.withOpacity(0.2)),
+                                  ),
+                                  child: Text(
+                                    jobState["error_message"].toString(),
+                                    style: TextStyle(color: Colors.redAccent, fontSize: 11),
+                                  ),
+                                ),
+                              ],
                             ],
-                          ),
-                        )
-                      ],
-                    ),
-                  ),
-
-                  SizedBox(height: 24),
-
-                  Container(
-                    padding: EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(24),
-                      gradient: LinearGradient(
-                        colors: [Color(0xFF1E1E1E), Color(0xFF2A2A2A)],
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          jobState["title"] ?? "",
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    "${speedMbps.toStringAsFixed(1)} MB/s",
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                  Text("CURRENT SPEED",
-                                      style: TextStyle(
-                                          fontSize: 10,
-                                          color: Colors.white54))
-                                ],
-                              ),
-                            ),
-                            SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    "${jobState["eta"] ?? 0}s",
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        fontSize: 20,
-                                        color: accent,
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                  Text("TIME REMAINING",
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.end,
-                                      style: TextStyle(
-                                          fontSize: 10,
-                                          color: Colors.white54))
-                                ],
-                              ),
-                            ),
                           ],
-                        )
-                      ],
-                    ),
-                  ),
-
-                  SizedBox(height: 16),
-
-                  Row(
-                    children: [
-                      Expanded(child: buildSmallButton(Icons.pause, "PAUSE")),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () {
-                            ApiService.cancel(jobState["job_id"]);
-                          },
-                          child: buildPrimaryButton(),
                         ),
                       ),
-                      Expanded(child: buildSmallButton(Icons.share, "SHARE")),
                     ],
                   ),
 
-                  SizedBox(height: 16),
-
-                  buildToggle("HIGH QUALITY", "4K UHD Enabled",
-                      highQuality, (v) => setState(() => highQuality = v)),
-
-                  SizedBox(height: 10),
-
-                  buildToggle("STAY AWAKE", "Screen stays on",
-                      stayAwake, (v) => setState(() => stayAwake = v)),
-
-                  SizedBox(height: 20),
+                  /// ACTION BUTTON
+                  Padding(
+                    padding: EdgeInsets.only(bottom: 16, top: 24),
+                    child: GestureDetector(
+                      onTap: () async {
+                        if (isActive) {
+                          try {
+                            await ApiService.cancel(jobState["job_id"]);
+                            if (!context.mounted) return;
+                            setState(() {
+                              jobState["status"] = "cancelled";
+                            });
+                          } catch (e) {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text("Cancel failed: ${ApiService.formatErrorMessage(e)}")),
+                            );
+                          }
+                        } else {
+                          // Pop with "delete" so parent deletes it
+                          Navigator.pop(context, "delete");
+                        }
+                      },
+                      child: Container(
+                        height: 56,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          color: isActive ? Colors.white10 : accent,
+                          border: isActive ? Border.all(color: Colors.white24) : null,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              isActive ? Icons.close_rounded : Icons.delete_outline_rounded,
+                              color: isActive ? Colors.white : Colors.black,
+                              size: 20,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              isActive ? "CANCEL DOWNLOAD" : "DELETE FROM HISTORY",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: isActive ? Colors.white : Colors.black,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  Widget buildSmallButton(IconData icon, String label) {
-    return Container(
-      height: 60,
-      margin: EdgeInsets.symmetric(horizontal: 6),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        color: Color(0xFF1E1E1E),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon),
-          SizedBox(height: 4),
-          Text(label, style: TextStyle(fontSize: 10))
-        ],
-      ),
-    );
-  }
-
-  Widget buildPrimaryButton() {
-    return Container(
-      height: 60,
-      margin: EdgeInsets.symmetric(horizontal: 6),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        color: Color(0xFFFF2D2D),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.close, color: Colors.black),
-          SizedBox(height: 4),
-          Text("CANCEL",
-              style: TextStyle(fontSize: 10, color: Colors.black))
-        ],
-      ),
-    );
-  }
-
-  Widget buildToggle(String t, String s, bool val, Function(bool) onChanged) {
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        color: Color(0xFF1E1E1E),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(t, maxLines: 1, overflow: TextOverflow.ellipsis),
-                SizedBox(height: 4),
-                Text(
-                  s,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: Colors.white54),
-                )
-              ],
-            ),
-          ),
-          SizedBox(width: 12),
-          Switch(
-            value: val,
-            onChanged: onChanged,
-            activeThumbColor: Color(0xFFFF2D2D),
-          )
-        ],
       ),
     );
   }

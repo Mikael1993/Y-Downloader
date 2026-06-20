@@ -219,6 +219,7 @@ class ApiService {
     String url, {
     String format = "mp3",
     String quality = "192",
+    int concurrentThreads = 1,
   }) async {
     final response = await _request(
       (baseUrl) => http.post(
@@ -228,6 +229,7 @@ class ApiService {
           "url": url,
           "format_type": format,
           "quality": quality,
+          "concurrent_threads": concurrentThreads,
         }),
       ),
     );
@@ -318,6 +320,18 @@ class ApiService {
 
     if (response.statusCode != 200) {
       throw Exception(_extractError(response, "Cancel failed"));
+    }
+  }
+
+  static Future<bool> isWifiConnected() async {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return true;
+    }
+    try {
+      final bool isWifi = await _fileChannel.invokeMethod("isWifiConnected");
+      return isWifi;
+    } catch (_) {
+      return true;
     }
   }
 }

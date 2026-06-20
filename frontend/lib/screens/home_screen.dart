@@ -2,17 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import '../services/api_service.dart';
+import '../services/storage_service.dart';
 import 'download_detail_screen.dart';
+import 'settings_screen.dart';
 import '../widgets/quality_selector.dart';
 
 class HomeScreen extends StatefulWidget {
   final List<Map<String, dynamic>> downloads;
+  final Color accentColor;
+  final ValueChanged<Color> onAccentColorChanged;
   final Function(Map<String, dynamic>) onAddDownload;
+  final Function(Map<String, dynamic>) onDeleteDownload;
+  final VoidCallback onViewAllDownloads;
+  final VoidCallback onHistoryCleared;
 
   const HomeScreen({
     super.key,
     required this.downloads,
+    required this.accentColor,
+    required this.onAccentColorChanged,
     required this.onAddDownload,
+    required this.onDeleteDownload,
+    required this.onViewAllDownloads,
+    required this.onHistoryCleared,
   });
 
   @override
@@ -31,14 +43,14 @@ class _HomeScreenState extends State<HomeScreen> {
   Timer? clipboardTimer;
   String lastClipboardContent = "";
   String? detectedClipboardLink;
-  // Persist across widget rebuilds in the same session
-  static bool _clipboardNotificationShown = false;
   List lastResults = [];
+  List<String> searchHistory = [];
 
   @override
   void initState() {
     super.initState();
     startClipboardMonitoring();
+    _loadSearchHistory();
   }
 
   @override
@@ -46,6 +58,12 @@ class _HomeScreenState extends State<HomeScreen> {
     clipboardTimer?.cancel();
     controller.dispose();
     super.dispose();
+  }
+
+  void _loadSearchHistory() {
+    setState(() {
+      searchHistory = StorageService.getSearchHistory();
+    });
   }
 
   void startClipboardMonitoring() {
@@ -67,28 +85,34 @@ class _HomeScreenState extends State<HomeScreen> {
             detectedClipboardLink = text;
           });
 
-          // Show notification only once per app session (persisted across
-          // HomeScreen rebuilds). Use a microtask to ensure setState has
-          // completed before showing a SnackBar.
-          if (!_clipboardNotificationShown) {
-            _clipboardNotificationShown = true;
-            Future.microtask(() {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text("YouTube link ready in clipboard"),
-                    duration: Duration(seconds: 2),
-                    backgroundColor: Color(0xFFFF2D2D),
-                  ),
-                );
-              }
-            });
-          }
+          Future.microtask(() {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text("YouTube link ready in clipboard"),
+                  duration: Duration(seconds: 2),
+                  backgroundColor: widget.accentColor,
+                ),
+              );
+            }
+          });
         }
       } catch (e) {
         // Silently ignore errors reading clipboard
       }
     });
+  }
+
+  Future<void> openDetailScreen(Map<String, dynamic> job) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DownloadDetailScreen(job: job),
+      ),
+    );
+    if (result == "delete" && mounted) {
+      widget.onDeleteDownload(job);
+    }
   }
 
   @override
@@ -119,6 +143,10 @@ class _HomeScreenState extends State<HomeScreen> {
           selectedVideo = data;
         });
       } else {
+        // Add to search history and save
+        await StorageService.addSearchQuery(input);
+        _loadSearchHistory();
+
         final res = await ApiService.search(input);
 
         if (!mounted) return;
@@ -155,6 +183,8 @@ class _HomeScreenState extends State<HomeScreen> {
       text = data.text!.trim();
     }
 
+    if (!mounted) return;
+
     if (!ApiService.isYoutubeUrl(text)) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("No valid YouTube link in clipboard")),
@@ -173,19 +203,59 @@ class _HomeScreenState extends State<HomeScreen> {
       {String quality = "192"}) async {
     print("START DOWNLOAD: $url");
 
-    final jobId = await ApiService.startDownload(
-      url,
-      quality: quality,
-    );
+    // Check WiFi only restriction
+    final isWifiOnly = StorageService.getWifiOnly();
+    if (isWifiOnly) {
+      final isWifi = await ApiService.isWifiConnected();
+      if (!isWifi) {
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            backgroundColor: const Color(0xFF161618),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Text("WiFi Only Enabled", style: TextStyle(fontWeight: FontWeight.bold)),
+            content: const Text(
+              "Your settings restrict downloads to WiFi networks only. Please connect to a WiFi network or disable this option in settings.",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text("OK", style: TextStyle(color: widget.accentColor, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+    }
 
-    widget.onAddDownload({
-      "job_id": jobId,
-      "title": title,
-      "progress": 0.0,
-      "status": "starting",
-      "saved": false,
-      "format_type": "mp3",
-    });
+    final concurrentThreads = StorageService.getConcurrentThreads();
+
+    try {
+      final jobId = await ApiService.startDownload(
+        url,
+        quality: quality,
+        concurrentThreads: concurrentThreads,
+      );
+
+      widget.onAddDownload({
+        "job_id": jobId,
+        "title": title,
+        "progress": 0.0,
+        "status": "starting",
+        "saved": false,
+        "format_type": "mp3",
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Failed to start download: ${ApiService.formatErrorMessage(e)}"),
+          backgroundColor: widget.accentColor,
+        ),
+      );
+    }
   }
 
   Widget fallbackThumb() {
@@ -199,7 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = Color(0xFFFF2D2D);
+    final accent = widget.accentColor;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -227,7 +297,24 @@ class _HomeScreenState extends State<HomeScreen> {
                               letterSpacing: 2))
                     ],
                   ),
-                  Icon(Icons.settings, color: Colors.white),
+                  IconButton(
+                    icon: const Icon(Icons.settings, color: Colors.white),
+                    onPressed: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => SettingsScreen(
+                            currentAccentColor: widget.accentColor,
+                            onAccentColorChanged: widget.onAccentColorChanged,
+                            onHistoryCleared: () {
+                              widget.onHistoryCleared();
+                              _loadSearchHistory();
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
 
@@ -292,7 +379,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
               SizedBox(height: 20),
 
-              if (loading) CircularProgressIndicator(),
+              if (loading) CircularProgressIndicator(color: accent),
 
               if (!loading && statusMessage != null)
                 Container(
@@ -309,6 +396,58 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: TextStyle(color: Colors.white70),
                   ),
                 ),
+
+              /// SEARCH HISTORY SUGGESTIONS CHIPS
+              if (selectedVideo == null &&
+                  results.isEmpty &&
+                  statusMessage == null &&
+                  searchHistory.isNotEmpty) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    "RECENT SEARCHES",
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.5,
+                      color: Colors.white38,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 38,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: searchHistory.length,
+                    itemBuilder: (context, idx) {
+                      final query = searchHistory[idx];
+                      return Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        child: ActionChip(
+                          backgroundColor: const Color(0xFF161618),
+                          side: BorderSide.none,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(18),
+                          ),
+                          label: Text(
+                            query,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                          onPressed: () {
+                            controller.text = query;
+                            handleInput();
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
 
               /// SEARCH RESULTS
               if (results.isNotEmpty)
@@ -466,101 +605,226 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-              /// DEFAULT GRID
+              /// DEFAULT VIEW (No active search or selection)
               if (selectedVideo == null &&
                   results.isEmpty &&
                   statusMessage == null)
                 Expanded(
-                  child: GridView.count(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                    children: [
-                      GestureDetector(
-                        onTap: pasteFromClipboard,
-                        child: buildTile(Icons.content_paste, "CLIPBOARD",
-                            "Auto-detect link"),
-                      ),
-                      buildTile(Icons.history, "HISTORY", "24 items saved"),
-                      buildTile(Icons.public, "BROWSER", "In-app search"),
-                      buildTile(Icons.folder, "FILES", "Manage storage"),
-                      if (latestJob != null)
-                        buildActivityCard(latestJob!, accent),
-                    ],
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (detectedClipboardLink != null) ...[
+                          Container(
+                            width: double.infinity,
+                            padding: EdgeInsets.all(18),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(color: accent.withOpacity(0.4), width: 1.5),
+                              gradient: LinearGradient(
+                                colors: [Color(0xFF251010), Color(0xFF140808)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(Icons.link, color: accent, size: 20),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      "LINK DETECTED",
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        letterSpacing: 1.5,
+                                      ),
+                                    ),
+                                    Spacer(),
+                                    GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          detectedClipboardLink = null;
+                                        });
+                                      },
+                                      child: Icon(Icons.close, color: Colors.white38, size: 18),
+                                    ),
+                                  ],
+                                ),
+                                SizedBox(height: 10),
+                                Text(
+                                  detectedClipboardLink!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                                ),
+                                SizedBox(height: 14),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: GestureDetector(
+                                        onTap: pasteFromClipboard,
+                                        child: Container(
+                                          padding: EdgeInsets.symmetric(vertical: 10),
+                                          decoration: BoxDecoration(
+                                            color: accent,
+                                            borderRadius: BorderRadius.circular(14),
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              "PASTE & SEARCH",
+                                              style: TextStyle(
+                                                color: Colors.black,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(height: 24),
+                        ],
+
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              "RECENT DOWNLOADS",
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 2,
+                                color: Colors.white54,
+                              ),
+                            ),
+                            if (widget.downloads.isNotEmpty)
+                              GestureDetector(
+                                onTap: widget.onViewAllDownloads,
+                                child: Text(
+                                  "VIEW ALL",
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: accent,
+                                    letterSpacing: 1,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+
+                        SizedBox(height: 16),
+
+                        if (widget.downloads.isEmpty)
+                          Container(
+                            width: double.infinity,
+                            padding: EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+                            decoration: BoxDecoration(
+                              color: Color(0xFF161618),
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            child: Column(
+                              children: [
+                                Icon(Icons.library_music_rounded, color: Colors.white24, size: 48),
+                                SizedBox(height: 16),
+                                Text(
+                                  "No downloads yet",
+                                  style: TextStyle(
+                                    color: Colors.white70,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  "Search or paste a YouTube URL to get started.",
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          Column(
+                            children: widget.downloads.reversed.take(3).map((job) {
+                              final progress = job["progress"] ?? 0.0;
+                              final status = job["status"]?.toString() ?? "unknown";
+                              
+                              return GestureDetector(
+                                onTap: () => openDetailScreen(job),
+                                child: Container(
+                                  margin: EdgeInsets.only(bottom: 12),
+                                  padding: EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: Color(0xFF161618),
+                                    borderRadius: BorderRadius.circular(18),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      SizedBox(
+                                        height: 36,
+                                        width: 36,
+                                        child: CircularProgressIndicator(
+                                          value: progress,
+                                          strokeWidth: 3.5,
+                                          color: accent,
+                                          backgroundColor: Colors.white10,
+                                        ),
+                                      ),
+                                      SizedBox(width: 14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              job["title"] ?? "No Title",
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                            SizedBox(height: 4),
+                                            Text(
+                                              status.toUpperCase(),
+                                              style: TextStyle(
+                                                color: status == "completed" 
+                                                    ? Colors.greenAccent 
+                                                    : Colors.white54,
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.bold,
+                                                letterSpacing: 1,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Icon(Icons.chevron_right_rounded, color: Colors.white38, size: 20),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget buildTile(IconData icon, String title, String subtitle) {
-    final accent = Color(0xFFFF2D2D);
-
-    return Container(
-      padding: EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        gradient: LinearGradient(
-          colors: [Color(0xFF1E1E1E), Color(0xFF2A2A2A)],
-        ),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: accent),
-          SizedBox(height: 10),
-          Text(title, style: TextStyle(color: Colors.white)),
-          Text(subtitle, style: TextStyle(color: Colors.white54))
-        ],
-      ),
-    );
-  }
-
-  Widget buildActivityCard(Map job, Color accent) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => DownloadDetailScreen(
-              job: Map<String, dynamic>.from(job),
-            ),
-          ),
-        );
-      },
-      child: Container(
-        padding: EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
-          gradient: LinearGradient(
-            colors: [Color(0xFF1E1E1E), Color(0xFF2A2A2A)],
-          ),
-        ),
-        child: Row(
-          children: [
-            SizedBox(
-              height: 50,
-              width: 50,
-              child: CircularProgressIndicator(
-                value: job["progress"],
-                color: accent,
-                backgroundColor: Colors.white10,
-              ),
-            ),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                job["title"],
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-            Icon(Icons.arrow_forward_ios, size: 14, color: Colors.white)
-          ],
         ),
       ),
     );

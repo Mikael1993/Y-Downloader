@@ -3,6 +3,9 @@ import shutil
 import threading
 import time
 import uuid
+import urllib.request
+import urllib.parse
+import json
 from pathlib import Path
 from typing import Literal
 
@@ -46,6 +49,7 @@ class DownloadRequest(BaseModel):
     url: str
     format_type: Literal["mp3", "mp4"] = "mp3"
     quality: Literal["128", "192", "256", "320"] = "192"
+    concurrent_threads: int = 1
 
 
 def require_binary(binary_name, detail):
@@ -58,7 +62,7 @@ def require_binary(binary_name, detail):
     )
 
 
-def download_task(job_id, url, format_type, quality):
+def download_task(job_id, url, format_type, quality, concurrent_threads=1):
     final_file_path = {"path": ""}
 
     def progress_hook(d):
@@ -103,6 +107,7 @@ def download_task(job_id, url, format_type, quality):
         "outtmpl": str(downloads_dir / f"%(title)s-{job_id}.%(ext)s"),
         "restrictfilenames": True,
         "js_runtimes": {"node": {}},
+        "concurrent_fragment_downloads": concurrent_threads,
     }
 
     if format_type == "mp3":
@@ -222,6 +227,71 @@ def search_videos(query: str):
             content={"error": str(e)},
         )
 
+@app.get("/info")
+def get_video_info(url: str):
+    url = url.strip()
+    if not url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="URL is required.",
+        )
+
+    if not shutil.which("node"):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Node.js is required on the backend for info requests.",
+        )
+
+    try:
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "js_runtimes": {"node": {}},
+        }
+
+        with yt_dlp.YoutubeDL(dict(ydl_opts)) as ydl:  # type: ignore
+            v = ydl.extract_info(url, download=False) or {}
+
+        thumbnail = v.get("thumbnail") or ""
+        if not thumbnail:
+            thumbnails = v.get("thumbnails") or []
+            if thumbnails:
+                thumbnail = thumbnails[-1].get("url") or ""
+
+        return {
+            "title": v.get("title") or "No title",
+            "thumbnail": thumbnail,
+            "url": v.get("webpage_url") or url,
+            "duration": v.get("duration"),
+            "uploader": v.get("uploader") or v.get("channel") or "Unknown",
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@app.get("/suggest")
+def get_suggestions(q: str):
+    q = q.strip()
+    if not q:
+        return {"suggestions": []}
+    try:
+        url = f"https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q={urllib.parse.quote(q)}"
+        req = urllib.request.Request(
+            url, 
+            headers={'User-Agent': 'Mozilla/5.0'}
+        )
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            suggestions = data[1] if len(data) > 1 else []
+            return {"suggestions": suggestions}
+    except Exception as e:
+        return {"suggestions": [], "error": str(e)}
 
 
 @app.post("/download")
@@ -256,7 +326,7 @@ def start_download(request: DownloadRequest):
 
     threading.Thread(
         target=download_task,
-        args=(job_id, url, request.format_type, request.quality),
+        args=(job_id, url, request.format_type, request.quality, request.concurrent_threads),
         daemon=True,
     ).start()
 

@@ -6,7 +6,14 @@ import '../services/api_service.dart';
 import '../services/storage_service.dart';
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  final Color accentColor;
+  final ValueChanged<Color> onAccentColorChanged;
+
+  const MainScreen({
+    super.key,
+    required this.accentColor,
+    required this.onAccentColorChanged,
+  });
 
   @override
   State<MainScreen> createState() => _MainScreenState();
@@ -32,6 +39,14 @@ class _MainScreenState extends State<MainScreen> {
       setState(() {
         downloads = savedDownloads;
       });
+      // Resume polling if there are any active/running download tasks
+      final hasActive = downloads.any((job) {
+        final status = job["status"]?.toString().toLowerCase() ?? "";
+        return status == "starting" || status == "downloading" || status == "processing";
+      });
+      if (hasActive) {
+        startPolling();
+      }
     }
   }
 
@@ -149,6 +164,8 @@ class _MainScreenState extends State<MainScreen> {
     final screens = [
       HomeScreen(
         downloads: downloads,
+        accentColor: widget.accentColor,
+        onAccentColorChanged: widget.onAccentColorChanged,
         onAddDownload: (job) {
           setState(() {
             downloads.add(job);
@@ -156,8 +173,49 @@ class _MainScreenState extends State<MainScreen> {
           _saveDownloads();
           startPolling();
         },
+        onDeleteDownload: (job) {
+          setState(() {
+            downloads.removeWhere((j) => j["job_id"] == job["job_id"]);
+          });
+          _saveDownloads();
+        },
+        onViewAllDownloads: () {
+          setState(() {
+            currentIndex = 1;
+          });
+        },
+        onHistoryCleared: _loadDownloads,
       ),
-      DownloadsScreen(downloads: downloads),
+      DownloadsScreen(
+        downloads: downloads,
+        onCancelDownload: (jobId) async {
+          try {
+            await ApiService.cancel(jobId);
+            if (!context.mounted) return;
+            setState(() {
+              final index = downloads.indexWhere((j) => j["job_id"] == jobId);
+              if (index != -1) {
+                downloads[index]["status"] = "cancelled";
+              }
+            });
+            _saveDownloads();
+          } catch (e) {
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("Cancel failed: ${ApiService.formatErrorMessage(e)}"),
+                backgroundColor: widget.accentColor,
+              ),
+            );
+          }
+        },
+        onDeleteDownload: (job) {
+          setState(() {
+            downloads.removeWhere((j) => j["job_id"] == job["job_id"]);
+          });
+          _saveDownloads();
+        },
+      ),
     ];
 
     return Scaffold(

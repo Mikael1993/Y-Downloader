@@ -1,5 +1,8 @@
 package com.example.yt_downloader
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.content.ContentValues
 import android.os.Build
 import android.os.Environment
@@ -48,9 +51,32 @@ class MainActivity : FlutterActivity() {
                         }.start()
                     }
 
+                    "isWifiConnected" -> {
+                        val isWifi = isWifiConnected()
+                        result.success(isWifi)
+                    }
+
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun isWifiConnected(): Boolean {
+        return try {
+            val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val activeNetwork = connectivityManager.activeNetwork ?: return false
+                val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+            } else {
+                @Suppress("DEPRECATION")
+                val activeNetworkInfo = connectivityManager.activeNetworkInfo
+                @Suppress("DEPRECATION")
+                activeNetworkInfo != null && activeNetworkInfo.type == ConnectivityManager.TYPE_WIFI
+            }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     private fun saveUrlToDownloads(
