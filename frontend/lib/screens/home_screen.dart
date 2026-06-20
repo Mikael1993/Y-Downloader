@@ -635,10 +635,26 @@ class _HomeScreenState extends State<HomeScreen> {
                               return;
                             }
 
+                            int? duration;
+                            if (selectedVideo!["duration"] != null) {
+                              if (selectedVideo!["duration"] is int) {
+                                duration = selectedVideo!["duration"] as int;
+                              } else if (selectedVideo!["duration"] is double) {
+                                duration = (selectedVideo!["duration"] as double).toInt();
+                              } else {
+                                duration = int.tryParse(selectedVideo!["duration"].toString());
+                              }
+                            }
+
                             showModalBottomSheet(
                               context: context,
-                              backgroundColor: Colors.black,
+                              backgroundColor: Colors.transparent,
+                              isScrollControlled: true,
                               builder: (_) => QualitySelector(
+                                title: selectedVideo!["title"],
+                                thumbnailUrl: selectedVideo!["thumbnail"],
+                                uploader: selectedVideo!["uploader"],
+                                duration: duration,
                                 onSelect: (quality) {
                                   startDownload(
                                     url,
