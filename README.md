@@ -105,3 +105,10 @@ build/app/outputs/flutter-apk/app-release.apk
 * FFmpeg must be installed for MP3 conversion
 
 ---
+
+## 🔒 Security Considerations
+
+* **CORS Restrictions**: By default, if the `ALLOWED_ORIGINS` environment variable is not defined, the server defaults to allowing cross-origin requests from any origin (`*`). For production or shared environments, restrict origins by setting the environment variable `ALLOWED_ORIGINS` to a comma-separated list of allowed origins (e.g. `ALLOWED_ORIGINS=https://app.yourdomain.com`).
+* **Path Traversal Protection**: The backend enforces that only files generated inside the dedicated `downloads/` folder can be retrieved via the `/file/{job_id}` endpoint, resolving all paths and rejecting any outside file reads.
+* **Server Resource Limits**: The server restricts active parallel downloads to a maximum of 10 concurrent jobs and validates fragmentation threads (max 8 per download) to protect the host from Denial-of-Service (DoS) and IP rate-limiting.
+

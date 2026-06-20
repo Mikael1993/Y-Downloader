@@ -652,9 +652,17 @@ class _HomeScreenState extends State<HomeScreen> {
                               isScrollControlled: true,
                               builder: (_) => QualitySelector(
                                 title: selectedVideo!["title"],
+<<<<<<< Updated upstream
                                 thumbnailUrl: selectedVideo!["thumbnail"],
                                 uploader: selectedVideo!["uploader"],
                                 duration: duration,
+=======
+                                uploader: selectedVideo!["uploader"],
+                                thumbnail: selectedVideo!["thumbnail"],
+                                duration: selectedVideo!["duration"] != null
+                                    ? (selectedVideo!["duration"] as num).toInt()
+                                    : null,
+>>>>>>> Stashed changes
                                 onSelect: (quality) {
                                   startDownload(
                                     url,

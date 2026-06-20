@@ -303,6 +303,24 @@ def start_download(request: DownloadRequest):
             detail="A video URL is required.",
         )
 
+    if request.concurrent_threads < 1 or request.concurrent_threads > 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="concurrent_threads must be between 1 and 8.",
+        )
+
+    # Limit maximum concurrent active downloads to prevent server overload
+    with jobs_lock:
+        active_jobs = sum(
+            1 for j in jobs.values()
+            if j.get("status") in {"starting", "downloading", "processing"}
+        )
+        if active_jobs >= 10:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many active download jobs. Please wait for current downloads to finish."
+            )
+
     require_binary("node", "Node.js is required on the backend for download requests.")
 
     if request.format_type == "mp3":
@@ -388,6 +406,21 @@ def get_file(job_id: str):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not found",
+        )
+
+    # Secure path traversal check: ensure file is strictly inside downloads_dir
+    try:
+        abs_downloads = os.path.abspath(downloads_dir)
+        abs_file = os.path.abspath(file_path)
+        if os.path.commonpath([abs_downloads, abs_file]) != abs_downloads:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: File is outside the downloads directory."
+            )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: Invalid file path."
         )
 
     format_type = job.get("format_type", "mp3")
