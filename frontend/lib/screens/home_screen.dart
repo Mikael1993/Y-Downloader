@@ -45,6 +45,8 @@ class _HomeScreenState extends State<HomeScreen> {
   String? detectedClipboardLink;
   List lastResults = [];
   List<String> searchHistory = [];
+  List<String> suggestions = [];
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -56,6 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     clipboardTimer?.cancel();
+    _debounceTimer?.cancel();
     controller.dispose();
     super.dispose();
   }
@@ -63,6 +66,29 @@ class _HomeScreenState extends State<HomeScreen> {
   void _loadSearchHistory() {
     setState(() {
       searchHistory = StorageService.getSearchHistory();
+    });
+  }
+
+  void _onSearchTextChanged(String text) {
+    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () async {
+      final query = text.trim();
+      if (query.isEmpty) {
+        setState(() {
+          suggestions = [];
+        });
+        return;
+      }
+
+      try {
+        final list = await ApiService.getSuggestions(query);
+        if (!mounted) return;
+        setState(() {
+          suggestions = list;
+        });
+      } catch (_) {
+        // Ignore errors
+      }
     });
   }
 
@@ -127,7 +153,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final input = controller.text.trim();
     if (input.isEmpty) return;
 
+    _debounceTimer?.cancel();
     setState(() {
+      suggestions = [];
       loading = true;
       selectedVideo = null;
       results = [];
@@ -349,6 +377,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         style: TextStyle(color: Colors.white),
                         textInputAction: TextInputAction.search,
                         onSubmitted: (_) => handleInput(),
+                        onChanged: _onSearchTextChanged,
                         decoration: InputDecoration(
                           border: InputBorder.none,
                           hintText: "Enter YouTube link or search term...",
@@ -397,11 +426,50 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
+              /// SEARCH SUGGESTIONS OVERLAY
+              if (selectedVideo == null &&
+                  results.isEmpty &&
+                  statusMessage == null &&
+                  controller.text.trim().isNotEmpty &&
+                  suggestions.isNotEmpty)
+                Expanded(
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF161618),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: ListView.builder(
+                        itemCount: suggestions.length,
+                        itemBuilder: (context, idx) {
+                          final suggestion = suggestions[idx];
+                          return ListTile(
+                            leading: const Icon(Icons.search_rounded, color: Colors.white38, size: 20),
+                            title: Text(
+                              suggestion,
+                              style: const TextStyle(color: Colors.white, fontSize: 14),
+                            ),
+                            trailing: const Icon(Icons.arrow_outward_rounded, size: 16, color: Colors.white24),
+                            onTap: () {
+                              controller.text = suggestion;
+                              handleInput();
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+
               /// SEARCH HISTORY SUGGESTIONS CHIPS
               if (selectedVideo == null &&
                   results.isEmpty &&
                   statusMessage == null &&
-                  searchHistory.isNotEmpty) ...[
+                  searchHistory.isNotEmpty &&
+                  (controller.text.trim().isEmpty || suggestions.isEmpty)) ...[
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -608,7 +676,8 @@ class _HomeScreenState extends State<HomeScreen> {
               /// DEFAULT VIEW (No active search or selection)
               if (selectedVideo == null &&
                   results.isEmpty &&
-                  statusMessage == null)
+                  statusMessage == null &&
+                  (controller.text.trim().isEmpty || suggestions.isEmpty))
                 Expanded(
                   child: SingleChildScrollView(
                     child: Column(

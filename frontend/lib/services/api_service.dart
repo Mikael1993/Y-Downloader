@@ -334,4 +334,26 @@ class ApiService {
       return true;
     }
   }
+
+  static Future<List<String>> getSuggestions(String query) async {
+    final response = await _request(
+      (baseUrl) => http.get(
+        Uri.parse("$baseUrl/suggest").replace(
+          queryParameters: {"q": query},
+        ),
+      ),
+    );
+
+    if (response.statusCode != 200) {
+      return [];
+    }
+
+    try {
+      final data = jsonDecode(response.body);
+      final suggestions = data["suggestions"] as List?;
+      return suggestions?.map((s) => s.toString()).toList() ?? [];
+    } catch (_) {
+      return [];
+    }
+  }
 }
