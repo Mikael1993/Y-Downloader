@@ -119,16 +119,19 @@ def download_task(job_id, url, format_type, quality, concurrent_threads=1):
         "restrictfilenames": True,
         "js_runtimes": {"deno": {}, "node": {}},
         "concurrent_fragment_downloads": concurrent_threads,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["ios", "android_music", "web"]
-            }
-        }
     }
 
     cookies_file = Path("cookies.txt")
     if cookies_file.exists():
         ydl_opts["cookiefile"] = str(cookies_file)
+        ydl_opts["remote_components"] = ["ejs:github"]
+    else:
+        # Fallback to mobile player clients to bypass bot block without cookies
+        ydl_opts["extractor_args"] = {
+            "youtube": {
+                "player_client": ["ios", "android_music", "web"]
+            }
+        }
 
     if format_type == "mp3":
         ydl_opts.update({
@@ -213,6 +216,7 @@ def search_videos(query: str):
         cookies_file = Path("cookies.txt")
         if cookies_file.exists():
             ydl_opts["cookiefile"] = str(cookies_file)
+            ydl_opts["remote_components"] = ["ejs:github"]
 
         with yt_dlp.YoutubeDL(dict(ydl_opts)) as ydl:  # type: ignore
             search_data = ydl.extract_info(f"ytsearch5:{query}", download=False) or {}
@@ -272,16 +276,19 @@ def get_video_info(url: str):
             "no_warnings": True,
             "skip_download": True,
             "js_runtimes": {"deno": {}, "node": {}},
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["ios", "android_music", "web"]
-                }
-            }
         }
 
         cookies_file = Path("cookies.txt")
         if cookies_file.exists():
             ydl_opts["cookiefile"] = str(cookies_file)
+            ydl_opts["remote_components"] = ["ejs:github"]
+        else:
+            # Fallback to mobile player clients to bypass bot block without cookies
+            ydl_opts["extractor_args"] = {
+                "youtube": {
+                    "player_client": ["ios", "android_music", "web"]
+                }
+            }
 
         with yt_dlp.YoutubeDL(dict(ydl_opts)) as ydl:  # type: ignore
             v = ydl.extract_info(url, download=False) or {}
