@@ -82,7 +82,9 @@ class _MainScreenState extends State<MainScreen> {
           if (!mounted) return;
 
           final newStatus = data["status"]?.toString().toLowerCase() ?? "";
-          final int progressPct = data["status"] == "processing" ? 95 : (data["progress"] ?? 0);
+          final int progressPct = data["status"] == "processing"
+              ? 95
+              : ((data["progress"] as num?)?.round() ?? 0);
           final title = job["title"] ?? "Download";
 
           setState(() {
