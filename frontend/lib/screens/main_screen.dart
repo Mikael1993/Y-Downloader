@@ -220,7 +220,10 @@ class _MainScreenState extends State<MainScreen> {
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: screens[currentIndex],
+      body: IndexedStack(
+        index: currentIndex,
+        children: screens,
+      ),
       bottomNavigationBar: Padding(
         padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
         child: Container(

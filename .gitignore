@@ -9,6 +9,7 @@ frontend/pubspec.lock
 backend/__pycache__/
 backend/venv/
 backend/*.pyc
+backend/downloads/
 
 # OS
 .DS_Store

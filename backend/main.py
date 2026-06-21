@@ -275,21 +275,28 @@ def get_video_info(url: str):
         )
 
 
+from functools import lru_cache
+
+@lru_cache(maxsize=512)
+def fetch_google_suggestions(q: str):
+    url = f"https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q={urllib.parse.quote(q)}"
+    req = urllib.request.Request(
+        url, 
+        headers={'User-Agent': 'Mozilla/5.0'}
+    )
+    with urllib.request.urlopen(req) as response:
+        data = json.loads(response.read().decode('utf-8'))
+        return data[1] if len(data) > 1 else []
+
+
 @app.get("/suggest")
 def get_suggestions(q: str):
     q = q.strip()
     if not q:
         return {"suggestions": []}
     try:
-        url = f"https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q={urllib.parse.quote(q)}"
-        req = urllib.request.Request(
-            url, 
-            headers={'User-Agent': 'Mozilla/5.0'}
-        )
-        with urllib.request.urlopen(req) as response:
-            data = json.loads(response.read().decode('utf-8'))
-            suggestions = data[1] if len(data) > 1 else []
-            return {"suggestions": suggestions}
+        suggestions = fetch_google_suggestions(q)
+        return {"suggestions": suggestions}
     except Exception as e:
         return {"suggestions": [], "error": str(e)}
 

@@ -47,6 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<String> searchHistory = [];
   List<String> suggestions = [];
   Timer? _debounceTimer;
+  final Map<String, List<String>> _suggestionsCache = {};
 
   @override
   void initState() {
@@ -71,21 +72,38 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onSearchTextChanged(String text) {
     if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 300), () async {
-      final query = text.trim();
-      if (query.isEmpty) {
-        setState(() {
-          suggestions = [];
-        });
-        return;
-      }
 
+    final query = text.trim();
+    if (query.isEmpty) {
+      setState(() {
+        suggestions = [];
+      });
+      return;
+    }
+
+    // Check client-side cache first to show instantly
+    if (_suggestionsCache.containsKey(query)) {
+      setState(() {
+        suggestions = _suggestionsCache[query]!;
+      });
+      return;
+    }
+
+    // Faster 150ms debounce instead of 300ms
+    _debounceTimer = Timer(const Duration(milliseconds: 150), () async {
       try {
         final list = await ApiService.getSuggestions(query);
         if (!mounted) return;
-        setState(() {
-          suggestions = list;
-        });
+
+        // Store in cache
+        _suggestionsCache[query] = list;
+
+        // Verify query matches the latest input before updating state
+        if (controller.text.trim() == query) {
+          setState(() {
+            suggestions = list;
+          });
+        }
       } catch (_) {
         // Ignore errors
       }
@@ -274,6 +292,8 @@ class _HomeScreenState extends State<HomeScreen> {
         "status": "starting",
         "saved": false,
         "format_type": "mp3",
+        "thumbnail": selectedVideo?["thumbnail"] ?? "",
+        "uploader": selectedVideo?["uploader"] ?? "Unknown",
       });
     } catch (e) {
       if (!mounted) return;
@@ -427,10 +447,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
 
               /// SEARCH SUGGESTIONS OVERLAY
-              if (selectedVideo == null &&
-                  results.isEmpty &&
-                  statusMessage == null &&
-                  controller.text.trim().isNotEmpty &&
+              if (controller.text.trim().isNotEmpty &&
                   suggestions.isNotEmpty)
                 Expanded(
                   child: Container(
@@ -518,7 +535,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
 
               /// SEARCH RESULTS
-              if (results.isNotEmpty)
+              if (results.isNotEmpty &&
+                  !(controller.text.trim().isNotEmpty &&
+                      suggestions.isNotEmpty))
                 Expanded(
                   child: ListView.builder(
                     itemCount: results.length,
@@ -561,7 +580,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
 
               /// SELECTED VIDEO VIEW
-              if (selectedVideo != null)
+              if (selectedVideo != null &&
+                  !(controller.text.trim().isNotEmpty &&
+                      suggestions.isNotEmpty))
                 Expanded(
                   child: SingleChildScrollView(
                     child: Column(
@@ -652,17 +673,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               isScrollControlled: true,
                               builder: (_) => QualitySelector(
                                 title: selectedVideo!["title"],
-<<<<<<< Updated upstream
                                 thumbnailUrl: selectedVideo!["thumbnail"],
                                 uploader: selectedVideo!["uploader"],
                                 duration: duration,
-=======
-                                uploader: selectedVideo!["uploader"],
-                                thumbnail: selectedVideo!["thumbnail"],
-                                duration: selectedVideo!["duration"] != null
-                                    ? (selectedVideo!["duration"] as num).toInt()
-                                    : null,
->>>>>>> Stashed changes
                                 onSelect: (quality) {
                                   startDownload(
                                     url,
