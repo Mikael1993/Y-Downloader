@@ -6,13 +6,20 @@ class NotificationService {
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
+  static bool _initialized = false;
+  static bool _permissionGranted = false;
+
   static Future<void> initialize() async {
     if (kIsWeb) return;
     if (!Platform.isAndroid) return;
+    if (_initialized) return;
 
     try {
+      // Use 'ic_notif' — a white-on-transparent drawable icon for notifications.
+      // Android requires notification icons to be in res/drawable (not mipmap)
+      // and to be monochrome white with transparency.
       const AndroidInitializationSettings initializationSettingsAndroid =
-          AndroidInitializationSettings('launcher_icon');
+          AndroidInitializationSettings('@drawable/ic_notif');
 
       const InitializationSettings initializationSettings = InitializationSettings(
         android: initializationSettingsAndroid,
@@ -24,24 +31,28 @@ class NotificationService {
           // Handle notification click if needed
         },
       );
-    } catch (e) {
-      debugPrint("NotificationService: Failed to initialize with 'launcher_icon': $e");
-      try {
-        const AndroidInitializationSettings initializationSettingsAndroid =
-            AndroidInitializationSettings('ic_launcher');
 
-        const InitializationSettings initializationSettings = InitializationSettings(
-          android: initializationSettingsAndroid,
+      _initialized = true;
+      debugPrint("NotificationService: Initialized successfully with ic_notif");
+    } catch (e) {
+      debugPrint("NotificationService: Failed to initialize: $e");
+      // Fallback to default app icon
+      try {
+        const AndroidInitializationSettings fallback =
+            AndroidInitializationSettings('@mipmap/ic_launcher');
+
+        const InitializationSettings fallbackSettings = InitializationSettings(
+          android: fallback,
         );
 
         await _notificationsPlugin.initialize(
-          initializationSettings,
-          onDidReceiveNotificationResponse: (NotificationResponse response) {
-            // Handle notification click if needed
-          },
+          fallbackSettings,
+          onDidReceiveNotificationResponse: (NotificationResponse response) {},
         );
+        _initialized = true;
+        debugPrint("NotificationService: Initialized with fallback ic_launcher");
       } catch (ex) {
-        debugPrint("NotificationService: Fallback 'ic_launcher' also failed: $ex");
+        debugPrint("NotificationService: Fallback also failed: $ex");
       }
     }
   }
@@ -49,11 +60,18 @@ class NotificationService {
   static Future<void> requestPermissions() async {
     if (kIsWeb) return;
     if (Platform.isAndroid) {
+      // Ensure initialized before requesting permissions
+      if (!_initialized) {
+        await initialize();
+      }
+
       final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
           _notificationsPlugin.resolvePlatformSpecificImplementation<
               AndroidFlutterLocalNotificationsPlugin>();
       if (androidImplementation != null) {
-        await androidImplementation.requestNotificationsPermission();
+        final bool? granted = await androidImplementation.requestNotificationsPermission();
+        _permissionGranted = granted ?? false;
+        debugPrint("NotificationService: Permission granted = $_permissionGranted");
       }
     }
   }

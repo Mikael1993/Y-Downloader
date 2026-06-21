@@ -7,10 +7,12 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await StorageService.init();
   
-  // Initialize notifications in the background to prevent splash screen hang
-  NotificationService.initialize().catchError((error) {
+  // Initialize notifications - must complete before showing any
+  try {
+    await NotificationService.initialize();
+  } catch (error) {
     debugPrint("Failed to initialize NotificationService: $error");
-  });
+  }
   
   runApp(MyApp());
 }

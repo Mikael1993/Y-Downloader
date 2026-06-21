@@ -555,43 +555,72 @@ class _HomeScreenState extends State<HomeScreen> {
                   !(controller.text.trim().isNotEmpty &&
                       suggestions.isNotEmpty))
                 Expanded(
-                  child: ListView.builder(
-                    itemCount: results.length,
-                    itemBuilder: (context, i) {
-                      final v = results[i];
-
-                      final thumbnail = v["thumbnail"];
-                      final title = v["title"] ?? "No title";
-                      final uploader = v["uploader"] ?? "Unknown";
-
-                      return ListTile(
-                        leading: thumbnail != null && thumbnail != ""
-                            ? Image.network(
-                                thumbnail,
-                                width: 80,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) =>
-                                    fallbackThumb(),
-                              )
-                            : fallbackThumb(),
-
-                        title: Text(title,
-                            style: TextStyle(color: Colors.white)),
-
-                        subtitle: Text(uploader,
-                            style: TextStyle(color: Colors.white54)),
-
+                  child: Column(
+                    children: [
+                      GestureDetector(
                         onTap: () {
-                          print("SELECTED VIDEO: $v");
-
                           setState(() {
-                            selectedVideo = v;
                             results = [];
+                            lastResults = [];
                             statusMessage = null;
                           });
                         },
-                      );
-                    },
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.arrow_back, color: Colors.white54, size: 20),
+                                SizedBox(width: 4),
+                                Text("BACK", style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 1)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: results.length,
+                          itemBuilder: (context, i) {
+                            final v = results[i];
+
+                            final thumbnail = v["thumbnail"];
+                            final title = v["title"] ?? "No title";
+                            final uploader = v["uploader"] ?? "Unknown";
+
+                            return ListTile(
+                              leading: thumbnail != null && thumbnail != ""
+                                  ? Image.network(
+                                      thumbnail,
+                                      width: 80,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, _, _) =>
+                                          fallbackThumb(),
+                                    )
+                                  : fallbackThumb(),
+
+                              title: Text(title,
+                                  style: TextStyle(color: Colors.white)),
+
+                              subtitle: Text(uploader,
+                                  style: TextStyle(color: Colors.white54)),
+
+                              onTap: () {
+                                print("SELECTED VIDEO: $v");
+
+                                setState(() {
+                                  selectedVideo = v;
+                                  results = [];
+                                  statusMessage = null;
+                                });
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                 ),
 
