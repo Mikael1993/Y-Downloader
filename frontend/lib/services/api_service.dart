@@ -380,4 +380,55 @@ class ApiService {
       return [];
     }
   }
+
+  static bool isPlaylistUrl(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) return false;
+    if (!isYoutubeUrl(trimmed)) return false;
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null) return false;
+    return uri.queryParameters.containsKey("list");
+  }
+
+  static Future<Map<String, dynamic>> fetchPlaylistInfo(String url) async {
+    final response = await _request(
+      (baseUrl) => http.get(
+        Uri.parse("$baseUrl/playlist").replace(
+          queryParameters: {"url": url},
+        ),
+      ),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractError(response, "Failed to fetch playlist info"));
+    }
+
+    return jsonDecode(response.body);
+  }
+
+  static Future<Map<String, dynamic>> downloadPlaylist(
+    String url, {
+    String format = "mp3",
+    String quality = "192",
+    int concurrentThreads = 1,
+  }) async {
+    final response = await _request(
+      (baseUrl) => http.post(
+        Uri.parse("$baseUrl/download-playlist"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "url": url,
+          "format_type": format,
+          "quality": quality,
+          "concurrent_threads": concurrentThreads,
+        }),
+      ),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractError(response, "Playlist download failed"));
+    }
+
+    return jsonDecode(response.body);
+  }
 }

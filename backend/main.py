@@ -70,6 +70,13 @@ class DownloadRequest(BaseModel):
     concurrent_threads: int = 1
 
 
+class PlaylistDownloadRequest(BaseModel):
+    url: str
+    format_type: Literal["mp3", "mp4"] = "mp3"
+    quality: Literal["128", "192", "256", "320"] = "192"
+    concurrent_threads: int = 1
+
+
 def require_binary(binary_name, detail):
     if shutil.which(binary_name):
         return
@@ -228,7 +235,6 @@ def search_videos(query: str):
             "no_warnings": True,
             "skip_download": True,
             "extract_flat": True,
-            "noplaylist": True,
             "js_runtimes": {"deno": {}, "node": {}},
         }
 
@@ -237,7 +243,7 @@ def search_videos(query: str):
             ydl_opts["remote_components"] = ["ejs:github"]
 
         with yt_dlp.YoutubeDL(dict(ydl_opts)) as ydl:  # type: ignore
-            search_data = ydl.extract_info(f"ytsearch5:{query}", download=False) or {}
+            search_data = ydl.extract_info(f"ytsearch10:{query}", download=False) or {}
 
         entries = search_data.get("entries") or []
         results = []
@@ -253,16 +259,32 @@ def search_videos(query: str):
                     thumbnail = thumbnails[-1].get("url") or ""
 
             webpage_url = v.get("webpage_url")
-            if not webpage_url and v.get("id"):
-                webpage_url = f"https://www.youtube.com/watch?v={v['id']}"
+            ie_key = (v.get("ie_key") or v.get("_type") or "").lower()
+            entry_type = "video"
 
-            results.append({
+            # Detect playlist-type results
+            if ie_key in ("youtubeplaylist", "youtubetab", "playlist") or v.get("_type") == "playlist":
+                entry_type = "playlist"
+                if not webpage_url and v.get("id"):
+                    webpage_url = f"https://www.youtube.com/playlist?list={v['id']}"
+            else:
+                if not webpage_url and v.get("id"):
+                    webpage_url = f"https://www.youtube.com/watch?v={v['id']}"
+
+            result_entry = {
                 "title": v.get("title") or "No title",
                 "thumbnail": thumbnail,
                 "url": webpage_url or "",
                 "duration": v.get("duration"),
                 "uploader": v.get("uploader") or v.get("channel") or "Unknown",
-            })
+                "type": entry_type,
+            }
+
+            # Add video count for playlists if available
+            if entry_type == "playlist":
+                result_entry["video_count"] = v.get("playlist_count") or v.get("n_entries")
+
+            results.append(result_entry)
 
         return {"results": results}
 
@@ -333,6 +355,217 @@ def get_video_info(url: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=err_msg,
         )
+
+
+@app.get("/playlist")
+def get_playlist_info(url: str):
+    url = url.strip()
+    if not url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="URL is required.",
+        )
+
+    if not shutil.which("node"):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Node.js is required on the backend for playlist requests.",
+        )
+
+    try:
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "extract_flat": True,
+            "js_runtimes": {"deno": {}, "node": {}},
+        }
+
+        if cookies_file.exists():
+            ydl_opts["cookiefile"] = str(cookies_file)
+            ydl_opts["remote_components"] = ["ejs:github"]
+
+        with yt_dlp.YoutubeDL(dict(ydl_opts)) as ydl:  # type: ignore
+            playlist_data = ydl.extract_info(url, download=False) or {}
+
+        # Get playlist-level thumbnail
+        playlist_thumbnail = playlist_data.get("thumbnail") or ""
+        if not playlist_thumbnail:
+            thumbnails = playlist_data.get("thumbnails") or []
+            if thumbnails:
+                playlist_thumbnail = thumbnails[-1].get("url") or ""
+
+        entries_raw = playlist_data.get("entries") or []
+        entries = []
+
+        for v in entries_raw:
+            if not v:
+                continue
+
+            thumb = v.get("thumbnail") or ""
+            if not thumb:
+                thumbs = v.get("thumbnails") or []
+                if thumbs:
+                    thumb = thumbs[-1].get("url") or ""
+
+            webpage_url = v.get("webpage_url")
+            if not webpage_url and v.get("id"):
+                webpage_url = f"https://www.youtube.com/watch?v={v['id']}"
+
+            entries.append({
+                "title": v.get("title") or "No title",
+                "thumbnail": thumb,
+                "url": webpage_url or "",
+                "duration": v.get("duration"),
+                "uploader": v.get("uploader") or v.get("channel") or playlist_data.get("uploader") or "Unknown",
+            })
+
+        # Use first entry thumbnail as fallback for playlist thumbnail
+        if not playlist_thumbnail and entries:
+            playlist_thumbnail = entries[0].get("thumbnail", "")
+
+        return {
+            "title": playlist_data.get("title") or "Unknown Playlist",
+            "thumbnail": playlist_thumbnail,
+            "uploader": playlist_data.get("uploader") or playlist_data.get("channel") or "Unknown",
+            "video_count": len(entries),
+            "url": playlist_data.get("webpage_url") or url,
+            "entries": entries,
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        err_msg = str(e)
+        if cookies_file.exists():
+            err_msg += f" (Cookies file size: {cookies_file.stat().st_size} bytes)"
+        else:
+            err_msg += " (No cookies file found)"
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=err_msg,
+        )
+
+
+@app.post("/download-playlist")
+def download_playlist(request: PlaylistDownloadRequest):
+    url = request.url.strip()
+    if not url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A playlist URL is required.",
+        )
+
+    if request.concurrent_threads < 1 or request.concurrent_threads > 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="concurrent_threads must be between 1 and 8.",
+        )
+
+    require_binary("node", "Node.js is required on the backend for download requests.")
+
+    if request.format_type == "mp3":
+        require_binary("ffmpeg", "FFmpeg is required on the backend for mp3 downloads.")
+
+    # First extract the playlist info to get individual video URLs
+    try:
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "extract_flat": True,
+            "js_runtimes": {"deno": {}, "node": {}},
+        }
+
+        if cookies_file.exists():
+            ydl_opts["cookiefile"] = str(cookies_file)
+            ydl_opts["remote_components"] = ["ejs:github"]
+
+        with yt_dlp.YoutubeDL(dict(ydl_opts)) as ydl:  # type: ignore
+            playlist_data = ydl.extract_info(url, download=False) or {}
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to extract playlist: {str(e)}",
+        )
+
+    entries = playlist_data.get("entries") or []
+    if not entries:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No videos found in this playlist.",
+        )
+
+    playlist_id = str(uuid.uuid4())
+    playlist_title = playlist_data.get("title") or "Unknown Playlist"
+    job_ids = []
+
+    # Limit to prevent overloading the server
+    max_tracks = 50
+    entries = entries[:max_tracks]
+
+    with jobs_lock:
+        active_jobs = sum(
+            1 for j in jobs.values()
+            if j.get("status") in {"starting", "downloading", "processing"}
+        )
+        if active_jobs + len(entries) >= 20:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many active downloads. Please wait for current downloads to finish.",
+            )
+
+    for v in entries:
+        if not v:
+            continue
+
+        video_url = v.get("webpage_url")
+        if not video_url and v.get("id"):
+            video_url = f"https://www.youtube.com/watch?v={v['id']}"
+
+        if not video_url:
+            continue
+
+        job_id = str(uuid.uuid4())
+        video_title = v.get("title") or "No title"
+
+        with jobs_lock:
+            jobs[job_id] = {
+                "status": "starting",
+                "progress": 0,
+                "downloaded": 0,
+                "total": 0,
+                "speed": 0,
+                "eta": 0,
+                "cancelled": False,
+                "url": video_url,
+                "filename": "",
+                "format_type": request.format_type,
+                "quality": request.quality,
+                "concurrent_threads": request.concurrent_threads,
+                "playlist_id": playlist_id,
+                "title": video_title,
+            }
+
+        threading.Thread(
+            target=download_task,
+            args=(job_id, video_url, request.format_type, request.quality, request.concurrent_threads),
+            daemon=True,
+        ).start()
+
+        job_ids.append({
+            "job_id": job_id,
+            "title": video_title,
+            "thumbnail": v.get("thumbnail") or "",
+            "uploader": v.get("uploader") or v.get("channel") or playlist_data.get("uploader") or "Unknown",
+        })
+
+    return {
+        "playlist_id": playlist_id,
+        "playlist_title": playlist_title,
+        "job_ids": job_ids,
+    }
 
 
 from functools import lru_cache

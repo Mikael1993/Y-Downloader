@@ -6,6 +6,7 @@ import '../services/storage_service.dart';
 import 'download_detail_screen.dart';
 import 'settings_screen.dart';
 import '../widgets/quality_selector.dart';
+import 'playlist_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final List<Map<String, dynamic>> downloads;
@@ -199,12 +200,29 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       if (ApiService.isYoutubeUrl(input)) {
-        final data = await ApiService.fetchInfo(input);
+        if (ApiService.isPlaylistUrl(input)) {
+          if (!mounted) return;
+          setState(() {
+            loading = false;
+          });
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PlaylistScreen(
+                playlistUrl: input,
+                accentColor: widget.accentColor,
+                onAddDownload: widget.onAddDownload,
+              ),
+            ),
+          );
+        } else {
+          final data = await ApiService.fetchInfo(input);
 
-        if (!mounted) return;
-        setState(() {
-          selectedVideo = data;
-        });
+          if (!mounted) return;
+          setState(() {
+            selectedVideo = data;
+          });
+        }
       } else {
         // Add to search history and save
         await StorageService.addSearchQuery(input);
@@ -621,17 +639,63 @@ class _HomeScreenState extends State<HomeScreen> {
                               title: Text(title,
                                   style: TextStyle(color: Colors.white)),
 
-                              subtitle: Text(uploader,
-                                  style: TextStyle(color: Colors.white54)),
+                              subtitle: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(uploader,
+                                        style: TextStyle(color: Colors.white54)),
+                                  ),
+                                  if (v["type"] == "playlist") ...[
+                                    const SizedBox(width: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: accent.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.playlist_play_rounded, color: accent, size: 12),
+                                          const SizedBox(width: 2),
+                                          Text(
+                                            v["video_count"] != null ? "${v["video_count"]} TRACKS" : "PLAYLIST",
+                                            style: TextStyle(
+                                              color: accent,
+                                              fontSize: 8,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
 
                               onTap: () {
-                                print("SELECTED VIDEO: $v");
-
-                                setState(() {
-                                  selectedVideo = v;
-                                  results = [];
-                                  statusMessage = null;
-                                });
+                                print("SELECTED ITEM: $v");
+                                if (v["type"] == "playlist") {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => PlaylistScreen(
+                                        playlistUrl: v["url"] ?? "",
+                                        accentColor: widget.accentColor,
+                                        onAddDownload: widget.onAddDownload,
+                                        initialTitle: title,
+                                        initialThumbnail: thumbnail,
+                                        initialUploader: uploader,
+                                      ),
+                                    ),
+                                  );
+                                } else {
+                                  setState(() {
+                                    selectedVideo = v;
+                                    results = [];
+                                    statusMessage = null;
+                                  });
+                                }
                               },
                             );
                           },

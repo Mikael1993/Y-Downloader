@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'download_detail_screen.dart';
 
-class DownloadsScreen extends StatelessWidget {
+class DownloadsScreen extends StatefulWidget {
   final List<Map<String, dynamic>> downloads;
   final Function(String) onCancelDownload;
   final Function(Map<String, dynamic>) onDeleteDownload;
@@ -18,26 +18,63 @@ class DownloadsScreen extends StatelessWidget {
   });
 
   @override
+  State<DownloadsScreen> createState() => _DownloadsScreenState();
+}
+
+class _DownloadsScreenState extends State<DownloadsScreen> {
+  final Set<String> _expandedPlaylists = {};
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final accent = theme.colorScheme.primary;
     final cardColor = const Color(0xFF161618);
 
     // Calculate active vs completed counts
-    final activeCount = downloads.where((job) {
+    final activeCount = widget.downloads.where((job) {
       final s = job["status"]?.toString().toLowerCase() ?? "";
       return s == "starting" || s == "downloading" || s == "processing";
     }).length;
 
-    final pausedCount = downloads.where((job) {
+    final pausedCount = widget.downloads.where((job) {
       final s = job["status"]?.toString().toLowerCase() ?? "";
       return s == "paused";
     }).length;
 
-    final completedCount = downloads.where((job) {
+    final completedCount = widget.downloads.where((job) {
       final s = job["status"]?.toString().toLowerCase() ?? "";
       return s == "completed";
     }).length;
+
+    // Grouping downloads dynamically
+    final groupedDisplayItems = <Map<String, dynamic>>[];
+    final playlistGroups = <String, Map<String, dynamic>>{};
+
+    for (int i = widget.downloads.length - 1; i >= 0; i--) {
+      final job = widget.downloads[i];
+      final playlistId = job["playlist_id"];
+
+      if (playlistId == null) {
+        groupedDisplayItems.add({
+          "type": "single",
+          "job": job,
+        });
+      } else {
+        if (playlistGroups.containsKey(playlistId)) {
+          playlistGroups[playlistId]!["jobs"].insert(0, job);
+        } else {
+          final group = {
+            "type": "playlist",
+            "playlist_id": playlistId,
+            "playlist_title": job["playlist_title"] ?? "YouTube Playlist",
+            "thumbnail": job["thumbnail"] ?? "",
+            "jobs": [job],
+          };
+          playlistGroups[playlistId] = group;
+          groupedDisplayItems.add(group);
+        }
+      }
+    }
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -60,9 +97,9 @@ class DownloadsScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  if (downloads.isNotEmpty)
+                  if (widget.downloads.isNotEmpty)
                     Text(
-                      "${downloads.length} ${downloads.length == 1 ? 'item' : 'items'} • $activeCount active • ${pausedCount > 0 ? '$pausedCount paused • ' : ''}$completedCount completed",
+                      "${widget.downloads.length} ${widget.downloads.length == 1 ? 'item' : 'items'} • $activeCount active • ${pausedCount > 0 ? '$pausedCount paused • ' : ''}$completedCount completed",
                       style: const TextStyle(
                         fontSize: 12,
                         color: Colors.white54,
@@ -83,7 +120,7 @@ class DownloadsScreen extends StatelessWidget {
               const SizedBox(height: 24),
 
               // Content
-              if (downloads.isEmpty)
+              if (widget.downloads.isEmpty)
                 Expanded(
                   child: Center(
                     child: Column(
@@ -92,17 +129,17 @@ class DownloadsScreen extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.all(24),
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.02),
+                            color: Colors.white.withOpacity(0.02),
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.05),
+                              color: Colors.white.withOpacity(0.05),
                               width: 1,
                             ),
                           ),
                           child: Icon(
                             Icons.download_for_offline_rounded,
                             size: 64,
-                            color: accent.withValues(alpha: 0.8),
+                            color: accent.withOpacity(0.8),
                           ),
                         ),
                         const SizedBox(height: 20),
@@ -134,20 +171,51 @@ class DownloadsScreen extends StatelessWidget {
               else
                 Expanded(
                   child: ListView.builder(
-                    itemCount: downloads.length,
+                    itemCount: groupedDisplayItems.length,
                     itemBuilder: (context, index) {
-                      // Show latest downloads first in the list
-                      final job = downloads[downloads.length - 1 - index];
-                      return _DownloadCard(
-                        key: ValueKey(job["job_id"]),
-                        job: job,
-                        accent: accent,
-                        cardColor: cardColor,
-                        onCancelDownload: onCancelDownload,
-                        onDeleteDownload: onDeleteDownload,
-                        onPauseDownload: onPauseDownload,
-                        onResumeDownload: onResumeDownload,
-                      );
+                      final item = groupedDisplayItems[index];
+                      if (item["type"] == "single") {
+                        final job = item["job"] as Map<String, dynamic>;
+                        return _DownloadCard(
+                          key: ValueKey(job["job_id"]),
+                          job: job,
+                          accent: accent,
+                          cardColor: cardColor,
+                          onCancelDownload: widget.onCancelDownload,
+                          onDeleteDownload: widget.onDeleteDownload,
+                          onPauseDownload: widget.onPauseDownload,
+                          onResumeDownload: widget.onResumeDownload,
+                        );
+                      } else {
+                        final playlistId = item["playlist_id"] as String;
+                        final title = item["playlist_title"] as String;
+                        final thumbnail = item["thumbnail"] as String;
+                        final jobs = item["jobs"] as List<Map<String, dynamic>>;
+                        final isExpanded = _expandedPlaylists.contains(playlistId);
+
+                        return _PlaylistGroupCard(
+                          playlistId: playlistId,
+                          title: title,
+                          thumbnail: thumbnail,
+                          jobs: jobs,
+                          accent: accent,
+                          cardColor: cardColor,
+                          isExpanded: isExpanded,
+                          onToggleExpand: () {
+                            setState(() {
+                              if (isExpanded) {
+                                _expandedPlaylists.remove(playlistId);
+                              } else {
+                                _expandedPlaylists.add(playlistId);
+                              }
+                            });
+                          },
+                          onCancelDownload: widget.onCancelDownload,
+                          onDeleteDownload: widget.onDeleteDownload,
+                          onPauseDownload: widget.onPauseDownload,
+                          onResumeDownload: widget.onResumeDownload,
+                        );
+                      }
                     },
                   ),
                 ),
@@ -168,6 +236,7 @@ class _DownloadCard extends StatefulWidget {
   final Function(Map<String, dynamic>) onDeleteDownload;
   final Function(String) onPauseDownload;
   final Function(String) onResumeDownload;
+  final bool isNested;
 
   const _DownloadCard({
     super.key,
@@ -178,6 +247,7 @@ class _DownloadCard extends StatefulWidget {
     required this.onDeleteDownload,
     required this.onPauseDownload,
     required this.onResumeDownload,
+    this.isNested = false,
   });
 
   @override
@@ -289,36 +359,36 @@ class _DownloadCardState extends State<_DownloadCard>
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeOutCubic,
-        margin: const EdgeInsets.only(bottom: 16),
+        margin: widget.isNested ? const EdgeInsets.only(bottom: 8) : const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(24),
+          color: widget.isNested ? const Color(0xFF101012) : cardColor,
+          borderRadius: widget.isNested ? BorderRadius.circular(16) : BorderRadius.circular(24),
           border: Border.all(
             color: isActive
                 ? accent.withValues(alpha: 0.15)
-                : Colors.white.withValues(alpha: 0.05),
+                : (widget.isNested ? Colors.white.withValues(alpha: 0.02) : Colors.white.withValues(alpha: 0.05)),
             width: 1,
           ),
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: widget.isNested ? BorderRadius.circular(16) : BorderRadius.circular(24),
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: widget.isNested ? const EdgeInsets.all(8) : const EdgeInsets.all(12),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Left side: Thumbnail with fallback
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: widget.isNested ? BorderRadius.circular(10) : BorderRadius.circular(16),
                   child: Container(
-                    width: 85,
-                    height: 60,
+                    width: widget.isNested ? 60 : 85,
+                    height: widget.isNested ? 40 : 60,
                     color: Colors.white.withValues(alpha: 0.04),
                     child: thumbnail.isNotEmpty
                         ? Image.network(
                             thumbnail,
-                            width: 85,
-                            height: 60,
+                            width: widget.isNested ? 60 : 85,
+                            height: widget.isNested ? 40 : 60,
                             fit: BoxFit.cover,
                             errorBuilder: (context, error, stackTrace) =>
                                 const Center(
@@ -332,7 +402,7 @@ class _DownloadCardState extends State<_DownloadCard>
                           ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: widget.isNested ? 8 : 12),
 
                 // Middle side: Metadata & progress details
                 Expanded(
@@ -344,9 +414,9 @@ class _DownloadCardState extends State<_DownloadCard>
                         title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          fontSize: 14,
+                          fontSize: widget.isNested ? 12 : 14,
                           color: Colors.white,
                         ),
                       ),
@@ -358,7 +428,7 @@ class _DownloadCardState extends State<_DownloadCard>
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.5),
-                          fontSize: 11,
+                          fontSize: widget.isNested ? 10 : 11,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -498,7 +568,7 @@ class _DownloadCardState extends State<_DownloadCard>
                                 "•",
                                 style: const TextStyle(
                                   fontSize: 9,
-                                  color: Colors.white20,
+                                  color: Colors.white24,
                                 ),
                               ),
                               const SizedBox(width: 6),
@@ -637,3 +707,413 @@ class _DownloadCardState extends State<_DownloadCard>
     );
   }
 }
+
+class _PlaylistGroupCard extends StatelessWidget {
+  final String playlistId;
+  final String title;
+  final String thumbnail;
+  final List<Map<String, dynamic>> jobs;
+  final Color accent;
+  final Color cardColor;
+  final bool isExpanded;
+  final VoidCallback onToggleExpand;
+  final Function(String) onCancelDownload;
+  final Function(Map<String, dynamic>) onDeleteDownload;
+  final Function(String) onPauseDownload;
+  final Function(String) onResumeDownload;
+
+  const _PlaylistGroupCard({
+    required this.playlistId,
+    required this.title,
+    required this.thumbnail,
+    required this.jobs,
+    required this.accent,
+    required this.cardColor,
+    required this.isExpanded,
+    required this.onToggleExpand,
+    required this.onCancelDownload,
+    required this.onDeleteDownload,
+    required this.onPauseDownload,
+    required this.onResumeDownload,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final total = jobs.length;
+    final completed = jobs.where((j) => j["status"]?.toString().toLowerCase() == "completed").length;
+    final cancelled = jobs.where((j) => j["status"]?.toString().toLowerCase() == "cancelled").length;
+    final paused = jobs.where((j) => j["status"]?.toString().toLowerCase() == "paused").length;
+    final active = jobs.where((j) {
+      final s = j["status"]?.toString().toLowerCase();
+      return s == "starting" || s == "downloading" || s == "processing";
+    }).length;
+    final errors = jobs.where((j) => j["status"]?.toString().toLowerCase() == "error").length;
+
+    // Overall status
+    String status = "completed";
+    Color statusColor = Colors.greenAccent;
+    if (active > 0) {
+      status = "downloading";
+      statusColor = accent;
+    } else if (paused > 0) {
+      status = "paused";
+      statusColor = Colors.amber;
+    } else if (errors > 0 && completed + cancelled + errors == total) {
+      status = "error";
+      statusColor = Colors.redAccent;
+    } else if (cancelled == total) {
+      status = "cancelled";
+      statusColor = Colors.white54;
+    } else if (completed + cancelled == total) {
+      status = "completed";
+      statusColor = Colors.greenAccent;
+    }
+
+    // Average progress
+    double avgProgress = 0.0;
+    for (var j in jobs) {
+      avgProgress += (j["progress"] as num?)?.toDouble() ?? 0.0;
+    }
+    avgProgress = total > 0 ? avgProgress / total : 0.0;
+
+    // Sum speed
+    double sumSpeed = 0.0;
+    for (var j in jobs) {
+      sumSpeed += (j["speed"] as num?)?.toDouble() ?? 0.0;
+    }
+
+    // Sum sizes
+    double totalDownloaded = 0.0;
+    double totalBytes = 0.0;
+    for (var j in jobs) {
+      totalDownloaded += (j["downloaded"] as num?)?.toDouble() ?? 0.0;
+      totalBytes += (j["total"] as num?)?.toDouble() ?? 0.0;
+    }
+
+    String progressText = "";
+    if (totalDownloaded > 0 && totalBytes > 0) {
+      final downloadedMb = totalDownloaded / (1024 * 1024);
+      final totalMb = totalBytes / (1024 * 1024);
+      progressText = "${downloadedMb.toStringAsFixed(1)} MB / ${totalMb.toStringAsFixed(1)} MB";
+    }
+
+    final isMainActive = status == "downloading" || status == "starting" || status == "processing";
+
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: onToggleExpand,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeOutCubic,
+            margin: const EdgeInsets.only(bottom: 8),
+            decoration: BoxDecoration(
+              color: cardColor,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(
+                color: isMainActive
+                    ? accent.withValues(alpha: 0.15)
+                    : Colors.white.withValues(alpha: 0.05),
+                width: 1.5,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Thumbnail with playlist indicator overlay
+                  Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Container(
+                          width: 85,
+                          height: 60,
+                          color: Colors.white.withValues(alpha: 0.04),
+                          child: thumbnail.isNotEmpty
+                              ? Image.network(
+                                  thumbnail,
+                                  width: 85,
+                                  height: 60,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => const Center(
+                                    child: Icon(Icons.playlist_play_rounded, color: Colors.white30, size: 28),
+                                  ),
+                                )
+                              : const Center(
+                                  child: Icon(Icons.playlist_play_rounded, color: Colors.white30, size: 28),
+                                ),
+                        ),
+                      ),
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        top: 0,
+                        width: 32,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.75),
+                            borderRadius: const BorderRadius.only(
+                              topRight: Radius.circular(16),
+                              bottomRight: Radius.circular(16),
+                            ),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.playlist_play_rounded, color: Colors.white, size: 16),
+                              const SizedBox(height: 2),
+                              Text(
+                                "$total",
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 12),
+
+                  // Title and status info
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          "Playlist • $completed/$total completed${errors > 0 ? ' • $errors errors' : ''}",
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.5),
+                            fontSize: 11,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+
+                        // Overall playlist progress bar
+                        if (isMainActive || status == "paused") ...[
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                status.toUpperCase(),
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                  color: statusColor,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              Text(
+                                "${(avgProgress * 100).toStringAsFixed(0)}%",
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: statusColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: LinearProgressIndicator(
+                              value: avgProgress,
+                              minHeight: 4,
+                              backgroundColor: Colors.white.withValues(alpha: 0.05),
+                              valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              if (sumSpeed > 0)
+                                Text(
+                                  "${(sumSpeed / (1024 * 1024)).toStringAsFixed(1)} MB/s",
+                                  style: const TextStyle(fontSize: 10, color: Colors.white38),
+                                )
+                              else
+                                const SizedBox.shrink(),
+                              if (progressText.isNotEmpty)
+                                Text(
+                                  progressText,
+                                  style: const TextStyle(fontSize: 10, color: Colors.white38),
+                                ),
+                            ],
+                          ),
+                        ] else ...[
+                          // Inactive finished status badge
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  status.toUpperCase(),
+                                  style: TextStyle(
+                                    color: statusColor,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                              if (totalBytes > 0) ...[
+                                const SizedBox(width: 8),
+                                Text(
+                                  totalBytes >= 1024 * 1024 * 1024
+                                      ? "${(totalBytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB"
+                                      : "${(totalBytes / (1024 * 1024)).toStringAsFixed(1)} MB",
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white30,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // Actions & Expand arrow
+                  Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isMainActive || status == "paused") ...[
+                            IconButton(
+                              onPressed: () {
+                                if (status == "paused") {
+                                  for (var j in jobs) {
+                                    final s = j["status"]?.toString().toLowerCase();
+                                    if (s == "paused" || s == "error") {
+                                      onResumeDownload(j["job_id"]);
+                                    }
+                                  }
+                                } else {
+                                  for (var j in jobs) {
+                                    final s = j["status"]?.toString().toLowerCase();
+                                    if (s == "starting" || s == "downloading" || s == "processing") {
+                                      onPauseDownload(j["job_id"]);
+                                    }
+                                  }
+                                }
+                              },
+                              icon: Icon(
+                                status == "paused"
+                                    ? Icons.play_arrow_rounded
+                                    : Icons.pause_rounded,
+                                size: 22,
+                              ),
+                              color: statusColor,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          IconButton(
+                            onPressed: () {
+                              if (isMainActive || status == "paused") {
+                                for (var j in jobs) {
+                                  final s = j["status"]?.toString().toLowerCase();
+                                  if (s == "starting" || s == "downloading" || s == "processing" || s == "paused") {
+                                    onCancelDownload(j["job_id"]);
+                                  }
+                                }
+                              } else {
+                                for (var j in jobs) {
+                                  onDeleteDownload(j);
+                                }
+                              }
+                            },
+                            icon: Icon(
+                              (isMainActive || status == "paused")
+                                  ? Icons.close_rounded
+                                  : Icons.delete_outline_rounded,
+                              size: 20,
+                            ),
+                            color: (isMainActive || status == "paused")
+                                ? Colors.white38
+                                : Colors.white24,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Icon(
+                        isExpanded
+                            ? Icons.keyboard_arrow_up_rounded
+                            : Icons.keyboard_arrow_down_rounded,
+                        color: Colors.white38,
+                        size: 22,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
+        // Nested track items
+        if (isExpanded)
+          Padding(
+            padding: const EdgeInsets.only(left: 12, right: 0, bottom: 8),
+            child: Container(
+              padding: const EdgeInsets.only(left: 8),
+              decoration: const BoxDecoration(
+                border: Border(
+                  left: BorderSide(
+                    color: Colors.white10,
+                    width: 1.5,
+                  ),
+                ),
+              ),
+              child: Column(
+                children: jobs.map((job) {
+                  return _DownloadCard(
+                    key: ValueKey(job["job_id"]),
+                    job: job,
+                    accent: accent,
+                    cardColor: cardColor,
+                    onCancelDownload: onCancelDownload,
+                    onDeleteDownload: onDeleteDownload,
+                    onPauseDownload: onPauseDownload,
+                    onResumeDownload: onResumeDownload,
+                    isNested: true,
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
