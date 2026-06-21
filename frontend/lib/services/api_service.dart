@@ -7,7 +7,7 @@ import 'package:http/http.dart' as http;
 
 class ApiService {
   static const String _configuredBaseUrl =
-      String.fromEnvironment("API_BASE_URL", defaultValue: "");
+      String.fromEnvironment("API_BASE_URL", defaultValue: "https://yutoob-downloader.onrender.com");
   static const String _fallbackLanBaseUrl = "http://192.168.137.1:8000";
   static const Duration _requestTimeout = Duration(seconds: 12);
   static const MethodChannel _fileChannel = MethodChannel("yt_downloader/files");

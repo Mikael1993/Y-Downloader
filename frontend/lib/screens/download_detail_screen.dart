@@ -62,6 +62,16 @@ class _DownloadDetailScreenState extends State<DownloadDetailScreen> {
     startPolling();
   }
 
+  @override
+  void didUpdateWidget(covariant DownloadDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.job != oldWidget.job) {
+      setState(() {
+        jobState = widget.job;
+      });
+    }
+  }
+
   void startPolling() {
     final status = jobState["status"]?.toString().toLowerCase() ?? "";
     if (status == "completed" || status == "error" || status == "cancelled") {
@@ -86,6 +96,11 @@ class _DownloadDetailScreenState extends State<DownloadDetailScreen> {
           jobState["eta"] = data["eta"] ?? 0;
           jobState["downloaded"] = data["downloaded"] ?? 0;
           jobState["total"] = data["total"] ?? 0;
+          if (data["error"] != null) {
+            jobState["error_message"] = data["error"].toString();
+          } else if (data["error_message"] != null) {
+            jobState["error_message"] = data["error_message"].toString();
+          }
         });
 
         if (data["status"] == "completed" ||
@@ -342,22 +357,30 @@ class _DownloadDetailScreenState extends State<DownloadDetailScreen> {
                                 children: [
                                   Text("STORAGE STATUS", style: TextStyle(color: Colors.white54, fontSize: 12)),
                                   Text(
-                                    jobState["save_status"] == "saved_to_phone"
-                                        ? "Saved to Phone"
-                                        : jobState["save_status"] == "saving_to_phone"
-                                            ? "Saving..."
-                                            : "Cached on Server",
+                                    status == "error"
+                                        ? "Failed"
+                                        : status == "cancelled"
+                                            ? "Cancelled"
+                                            : jobState["save_status"] == "saved_to_phone"
+                                                ? "Saved to Phone"
+                                                : jobState["save_status"] == "saving_to_phone"
+                                                    ? "Saving..."
+                                                    : "Cached on Server",
                                     style: TextStyle(
-                                      color: jobState["save_status"] == "saved_to_phone" 
-                                          ? Colors.greenAccent 
-                                          : Colors.white70, 
+                                      color: status == "error"
+                                          ? Colors.redAccent
+                                          : status == "cancelled"
+                                              ? Colors.white38
+                                              : jobState["save_status"] == "saved_to_phone" 
+                                                  ? Colors.greenAccent 
+                                                  : Colors.white70, 
                                       fontWeight: FontWeight.bold,
                                       fontSize: 12,
                                     ),
                                   ),
                                 ],
                               ),
-                              if (status == "error" && jobState["error_message"] != null) ...[
+                              if (status == "error") ...[
                                 SizedBox(height: 12),
                                 Container(
                                   width: double.infinity,
@@ -368,8 +391,9 @@ class _DownloadDetailScreenState extends State<DownloadDetailScreen> {
                                     border: Border.all(color: Colors.red.withOpacity(0.2)),
                                   ),
                                   child: Text(
-                                    jobState["error_message"].toString(),
-                                    style: TextStyle(color: Colors.redAccent, fontSize: 11),
+                                    (jobState["error_message"] ?? jobState["error"] ?? "The download failed on the server. Make sure cookies are configured if YouTube requires verification.")
+                                        .toString(),
+                                    style: TextStyle(color: Colors.redAccent, fontSize: 11, height: 1.4),
                                   ),
                                 ),
                               ],

@@ -19,6 +19,17 @@ import traceback
 
 app = FastAPI()
 
+# Startup logic: check if YOUTUBE_COOKIES_CONTENT env var is set and write to cookies.txt
+cookies_content = os.getenv("YOUTUBE_COOKIES_CONTENT")
+if cookies_content:
+    try:
+        cookies_file = Path("cookies.txt")
+        cookies_file.write_text(cookies_content.strip() + "\n", encoding="utf-8")
+        print("Successfully wrote YOUTUBE_COOKIES_CONTENT environment variable to cookies.txt")
+    except Exception as e:
+        print(f"Error writing YOUTUBE_COOKIES_CONTENT to cookies.txt: {e}")
+
+
 downloads_dir = Path("downloads")
 downloads_dir.mkdir(exist_ok=True)
 
@@ -106,9 +117,18 @@ def download_task(job_id, url, format_type, quality, concurrent_threads=1):
         "progress_hooks": [progress_hook],
         "outtmpl": str(downloads_dir / f"%(title)s-{job_id}.%(ext)s"),
         "restrictfilenames": True,
-        "js_runtimes": {"node": {}},
+        "js_runtimes": {"deno": {}, "node": {}},
         "concurrent_fragment_downloads": concurrent_threads,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["ios", "android_music", "web"]
+            }
+        }
     }
+
+    cookies_file = Path("cookies.txt")
+    if cookies_file.exists():
+        ydl_opts["cookiefile"] = str(cookies_file)
 
     if format_type == "mp3":
         ydl_opts.update({
@@ -187,8 +207,12 @@ def search_videos(query: str):
             "skip_download": True,
             "extract_flat": True,
             "noplaylist": True,
-            "js_runtimes": {"node": {}},
+            "js_runtimes": {"deno": {}, "node": {}},
         }
+
+        cookies_file = Path("cookies.txt")
+        if cookies_file.exists():
+            ydl_opts["cookiefile"] = str(cookies_file)
 
         with yt_dlp.YoutubeDL(dict(ydl_opts)) as ydl:  # type: ignore
             search_data = ydl.extract_info(f"ytsearch5:{query}", download=False) or {}
@@ -247,8 +271,17 @@ def get_video_info(url: str):
             "quiet": True,
             "no_warnings": True,
             "skip_download": True,
-            "js_runtimes": {"node": {}},
+            "js_runtimes": {"deno": {}, "node": {}},
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["ios", "android_music", "web"]
+                }
+            }
         }
+
+        cookies_file = Path("cookies.txt")
+        if cookies_file.exists():
+            ydl_opts["cookiefile"] = str(cookies_file)
 
         with yt_dlp.YoutubeDL(dict(ydl_opts)) as ydl:  # type: ignore
             v = ydl.extract_info(url, download=False) or {}

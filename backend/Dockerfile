@@ -1,10 +1,13 @@
 # Use a lightweight Python base image
 FROM python:3.10-slim
 
-# Install system dependencies (FFmpeg, Curl, Node.js)
+# Install system dependencies (FFmpeg, Curl, Node.js, Deno)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     curl \
+    unzip \
+    && curl -fsSL https://deno.land/x/install/install.sh | sh \
+    && mv /root/.deno/bin/deno /usr/local/bin/deno \
     && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
     && apt-get install -y nodejs \
     && apt-get clean \

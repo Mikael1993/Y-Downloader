@@ -92,6 +92,11 @@ class _MainScreenState extends State<MainScreen> {
             job["downloaded"] = data["downloaded"] ?? 0;
             job["total"] = data["total"] ?? 0;
             job["format_type"] = data["format_type"] ?? job["format_type"] ?? "mp3";
+            if (data["error"] != null) {
+              job["error_message"] = data["error"].toString();
+            } else if (data["error_message"] != null) {
+              job["error_message"] = data["error_message"].toString();
+            }
           });
 
           if (data["status"] == "completed") {
