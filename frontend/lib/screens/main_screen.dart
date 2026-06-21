@@ -88,6 +88,7 @@ class _MainScreenState extends State<MainScreen> {
           final title = job["title"] ?? "Download";
 
           setState(() {
+            job["consecutive_failures"] = 0;
             job["progress"] =
                 (data["progress"] ?? 0) / 100;
 
@@ -120,7 +121,7 @@ class _MainScreenState extends State<MainScreen> {
 
               Future.delayed(Duration(seconds: 2), () async {
                 try {
-                  await ApiService.downloadToPhone(
+                   await ApiService.downloadToPhone(
                     job["job_id"],
                     formatType: job["format_type"] ?? "mp3",
                     title: job["title"],
@@ -166,12 +167,18 @@ class _MainScreenState extends State<MainScreen> {
             });
             NotificationService.showDownloadFailed(job["job_id"], title, "Job not found on server");
           } else {
-            setState(() {
-              job["status"] = "error";
-              job["error_message"] = e.toString();
-              job["error_checked"] = true;
-            });
-            NotificationService.showDownloadFailed(job["job_id"], title, e.toString());
+            final int failures = (job["consecutive_failures"] ?? 0) + 1;
+            job["consecutive_failures"] = failures;
+            if (failures >= 5) {
+              setState(() {
+                job["status"] = "error";
+                job["error_message"] = e.toString();
+                job["error_checked"] = true;
+              });
+              NotificationService.showDownloadFailed(job["job_id"], title, e.toString());
+            } else {
+              print("Transient network error for job ${job["job_id"]} (failure $failures/5): $e");
+            }
           }
           _saveDownloads();
         }

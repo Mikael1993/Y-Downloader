@@ -147,57 +147,64 @@ def download_task(job_id, url, format_type, quality, concurrent_threads=1):
             "merge_output_format": "mp4",
         })
 
-    try:
-        with yt_dlp.YoutubeDL(dict(ydl_opts)) as ydl:  # type: ignore
-            ydl.download([url])
+    retries = 1
+    while retries >= 0:
+        try:
+            with yt_dlp.YoutubeDL(dict(ydl_opts)) as ydl:  # type: ignore
+                ydl.download([url])
 
-        file_path = final_file_path["path"]
+            file_path = final_file_path["path"]
 
-        if format_type == "mp3" and file_path:
-            base, _ = os.path.splitext(file_path)
-            file_path = base + ".mp3"
+            if format_type == "mp3" and file_path:
+                base, _ = os.path.splitext(file_path)
+                file_path = base + ".mp3"
 
-        for _ in range(12):
-            if file_path and os.path.exists(file_path):
-                break
-            time.sleep(0.5)
+            for _ in range(12):
+                if file_path and os.path.exists(file_path):
+                    break
+                time.sleep(0.5)
 
-        if not file_path or not os.path.exists(file_path):
-            raise FileNotFoundError("Downloaded file was not created.")
+            if not file_path or not os.path.exists(file_path):
+                raise FileNotFoundError("Downloaded file was not created.")
 
-        with jobs_lock:
-            jobs[job_id].update({
-                "status": "completed",
-                "progress": 100,
-                "filename": file_path,
-                "format_type": format_type,
-            })
+            with jobs_lock:
+                jobs[job_id].update({
+                    "status": "completed",
+                    "progress": 100,
+                    "filename": file_path,
+                    "format_type": format_type,
+                })
+            break
 
-    except DownloadError as e:
-        with jobs_lock:
-            if "Cancelled" in str(e):
-                if jobs[job_id]["status"] == "paused":
-                    pass
+        except (DownloadError, Exception) as e:
+            is_416 = "416" in str(e) or "Range Not Satisfiable" in str(e)
+            if is_416 and retries > 0:
+                print(f"Caught 416 error for job {job_id}. Clearing partial files and retrying from scratch...")
+                retries -= 1
+                try:
+                    for f in downloads_dir.glob(f"*{job_id}*"):
+                        if f.exists():
+                            f.unlink()
+                except Exception as delete_err:
+                    print(f"Error deleting partial files for job {job_id}: {delete_err}")
+                continue
+
+            is_cancelled = "Cancelled" in str(e)
+            with jobs_lock:
+                if is_cancelled:
+                    if jobs[job_id]["status"] == "paused":
+                        pass
+                    else:
+                        jobs[job_id]["status"] = "cancelled"
                 else:
-                    jobs[job_id]["status"] = "cancelled"
-            else:
-                jobs[job_id]["status"] = "error"
-                err_msg = str(e)
-                if cookies_file.exists():
-                    err_msg += f" (Cookies file size: {cookies_file.stat().st_size} bytes)"
-                else:
-                    err_msg += " (No cookies file found)"
-                jobs[job_id]["error"] = err_msg
-
-    except Exception as e:
-        with jobs_lock:
-            jobs[job_id]["status"] = "error"
-            err_msg = str(e)
-            if cookies_file.exists():
-                err_msg += f" (Cookies file size: {cookies_file.stat().st_size} bytes)"
-            else:
-                err_msg += " (No cookies file found)"
-            jobs[job_id]["error"] = err_msg
+                    jobs[job_id]["status"] = "error"
+                    err_msg = str(e)
+                    if cookies_file.exists():
+                        err_msg += f" (Cookies file size: {cookies_file.stat().st_size} bytes)"
+                    else:
+                        err_msg += " (No cookies file found)"
+                    jobs[job_id]["error"] = err_msg
+            break
 
 
 @app.get("/search")
