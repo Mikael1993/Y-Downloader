@@ -10,19 +10,40 @@ class NotificationService {
     if (kIsWeb) return;
     if (!Platform.isAndroid) return;
 
-    const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('launcher_icon');
+    try {
+      const AndroidInitializationSettings initializationSettingsAndroid =
+          AndroidInitializationSettings('launcher_icon');
 
-    const InitializationSettings initializationSettings = InitializationSettings(
-      android: initializationSettingsAndroid,
-    );
+      const InitializationSettings initializationSettings = InitializationSettings(
+        android: initializationSettingsAndroid,
+      );
 
-    await _notificationsPlugin.initialize(
-      initializationSettings,
-      onDidReceiveNotificationResponse: (NotificationResponse response) {
-        // Handle notification click if needed
-      },
-    );
+      await _notificationsPlugin.initialize(
+        initializationSettings,
+        onDidReceiveNotificationResponse: (NotificationResponse response) {
+          // Handle notification click if needed
+        },
+      );
+    } catch (e) {
+      debugPrint("NotificationService: Failed to initialize with 'launcher_icon': $e");
+      try {
+        const AndroidInitializationSettings initializationSettingsAndroid =
+            AndroidInitializationSettings('ic_launcher');
+
+        const InitializationSettings initializationSettings = InitializationSettings(
+          android: initializationSettingsAndroid,
+        );
+
+        await _notificationsPlugin.initialize(
+          initializationSettings,
+          onDidReceiveNotificationResponse: (NotificationResponse response) {
+            // Handle notification click if needed
+          },
+        );
+      } catch (ex) {
+        debugPrint("NotificationService: Fallback 'ic_launcher' also failed: $ex");
+      }
+    }
   }
 
   static Future<void> requestPermissions() async {

@@ -6,7 +6,12 @@ import 'services/notification_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await StorageService.init();
-  await NotificationService.initialize();
+  
+  // Initialize notifications in the background to prevent splash screen hang
+  NotificationService.initialize().catchError((error) {
+    debugPrint("Failed to initialize NotificationService: $error");
+  });
+  
   runApp(MyApp());
 }
 
