@@ -29,9 +29,16 @@ cookies_content = os.getenv("YOUTUBE_COOKIES_CONTENT")
 if cookies_content:
     try:
         cookies_file.write_text(cookies_content.strip() + "\n", encoding="utf-8")
-        print("Successfully wrote YOUTUBE_COOKIES_CONTENT environment variable to cookies.txt")
+        print(f"Successfully wrote YOUTUBE_COOKIES_CONTENT to cookies.txt ({len(cookies_content)} characters)")
     except Exception as e:
         print(f"Error writing YOUTUBE_COOKIES_CONTENT to cookies.txt: {e}")
+else:
+    print("YOUTUBE_COOKIES_CONTENT environment variable is NOT set.")
+
+if cookies_file.exists():
+    print(f"Cookies file found at: {cookies_file.absolute()} (size: {cookies_file.stat().st_size} bytes)")
+else:
+    print(f"No cookies file found at: {cookies_file.absolute()}. Operating in cookie-less mode.")
 
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
 allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
@@ -124,18 +131,6 @@ def download_task(job_id, url, format_type, quality, concurrent_threads=1):
     if cookies_file.exists():
         ydl_opts["cookiefile"] = str(cookies_file)
         ydl_opts["remote_components"] = ["ejs:github"]
-        ydl_opts["extractor_args"] = {
-            "youtube": {
-                "player_client": ["android", "ios"]
-            }
-        }
-    else:
-        # Fallback to mobile player clients to bypass bot block without cookies
-        ydl_opts["extractor_args"] = {
-            "youtube": {
-                "player_client": ["ios", "android_music", "web"]
-            }
-        }
 
     if format_type == "mp3":
         ydl_opts.update({
@@ -187,12 +182,22 @@ def download_task(job_id, url, format_type, quality, concurrent_threads=1):
                     jobs[job_id]["status"] = "cancelled"
             else:
                 jobs[job_id]["status"] = "error"
-                jobs[job_id]["error"] = str(e)
+                err_msg = str(e)
+                if cookies_file.exists():
+                    err_msg += f" (Cookies file size: {cookies_file.stat().st_size} bytes)"
+                else:
+                    err_msg += " (No cookies file found)"
+                jobs[job_id]["error"] = err_msg
 
     except Exception as e:
         with jobs_lock:
             jobs[job_id]["status"] = "error"
-            jobs[job_id]["error"] = str(e)
+            err_msg = str(e)
+            if cookies_file.exists():
+                err_msg += f" (Cookies file size: {cookies_file.stat().st_size} bytes)"
+            else:
+                err_msg += " (No cookies file found)"
+            jobs[job_id]["error"] = err_msg
 
 
 @app.get("/search")
@@ -223,17 +228,6 @@ def search_videos(query: str):
         if cookies_file.exists():
             ydl_opts["cookiefile"] = str(cookies_file)
             ydl_opts["remote_components"] = ["ejs:github"]
-            ydl_opts["extractor_args"] = {
-                "youtube": {
-                    "player_client": ["android", "ios"]
-                }
-            }
-        else:
-            ydl_opts["extractor_args"] = {
-                "youtube": {
-                    "player_client": ["ios", "android_music", "web"]
-                }
-            }
 
         with yt_dlp.YoutubeDL(dict(ydl_opts)) as ydl:  # type: ignore
             search_data = ydl.extract_info(f"ytsearch5:{query}", download=False) or {}
@@ -267,9 +261,14 @@ def search_videos(query: str):
 
     except Exception as e:
         traceback.print_exc()
+        err_msg = str(e)
+        if cookies_file.exists():
+            err_msg += f" (Cookies file size: {cookies_file.stat().st_size} bytes)"
+        else:
+            err_msg += " (No cookies file found)"
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"error": str(e)},
+            content={"error": err_msg},
         )
 
 @app.get("/info")
@@ -298,18 +297,6 @@ def get_video_info(url: str):
         if cookies_file.exists():
             ydl_opts["cookiefile"] = str(cookies_file)
             ydl_opts["remote_components"] = ["ejs:github"]
-            ydl_opts["extractor_args"] = {
-                "youtube": {
-                    "player_client": ["android", "ios"]
-                }
-            }
-        else:
-            # Fallback to mobile player clients to bypass bot block without cookies
-            ydl_opts["extractor_args"] = {
-                "youtube": {
-                    "player_client": ["ios", "android_music", "web"]
-                }
-            }
 
         with yt_dlp.YoutubeDL(dict(ydl_opts)) as ydl:  # type: ignore
             v = ydl.extract_info(url, download=False) or {}
@@ -330,9 +317,14 @@ def get_video_info(url: str):
 
     except Exception as e:
         traceback.print_exc()
+        err_msg = str(e)
+        if cookies_file.exists():
+            err_msg += f" (Cookies file size: {cookies_file.stat().st_size} bytes)"
+        else:
+            err_msg += " (No cookies file found)"
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
+            detail=err_msg,
         )
 
 
