@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'screens/main_screen.dart';
 import 'services/storage_service.dart';
+import 'services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await StorageService.init();
+  await NotificationService.initialize();
   runApp(MyApp());
 }
 

@@ -74,7 +74,7 @@ class _DownloadDetailScreenState extends State<DownloadDetailScreen> {
 
   void startPolling() {
     final status = jobState["status"]?.toString().toLowerCase() ?? "";
-    if (status == "completed" || status == "error" || status == "cancelled") {
+    if (status == "completed" || status == "error" || status == "cancelled" || status == "paused") {
       return;
     }
 
@@ -186,7 +186,7 @@ class _DownloadDetailScreenState extends State<DownloadDetailScreen> {
                               size: Size(progressSize, progressSize),
                               painter: _RingPainter(
                                 progress: progress,
-                                color: accent,
+                                color: status == "paused" ? Colors.amber : accent,
                                 strokeWidth: 16,
                               ),
                             ),
@@ -215,7 +215,7 @@ class _DownloadDetailScreenState extends State<DownloadDetailScreen> {
                                     "PERCENT",
                                     style: TextStyle(
                                       letterSpacing: 2,
-                                      color: accent,
+                                      color: status == "paused" ? Colors.amber : accent,
                                       fontSize: 10,
                                     ),
                                   ),
@@ -231,7 +231,9 @@ class _DownloadDetailScreenState extends State<DownloadDetailScreen> {
                                               ? Colors.greenAccent 
                                               : status == "error" 
                                                   ? Colors.redAccent 
-                                                  : accent,
+                                                  : status == "paused"
+                                                      ? Colors.amber
+                                                      : accent,
                                           shape: BoxShape.circle,
                                         ),
                                       ),
@@ -361,19 +363,23 @@ class _DownloadDetailScreenState extends State<DownloadDetailScreen> {
                                         ? "Failed"
                                         : status == "cancelled"
                                             ? "Cancelled"
-                                            : jobState["save_status"] == "saved_to_phone"
-                                                ? "Saved to Phone"
-                                                : jobState["save_status"] == "saving_to_phone"
-                                                    ? "Saving..."
-                                                    : "Cached on Server",
+                                            : status == "paused"
+                                                ? "Paused"
+                                                : jobState["save_status"] == "saved_to_phone"
+                                                    ? "Saved to Phone"
+                                                    : jobState["save_status"] == "saving_to_phone"
+                                                        ? "Saving..."
+                                                        : "Cached on Server",
                                     style: TextStyle(
                                       color: status == "error"
                                           ? Colors.redAccent
                                           : status == "cancelled"
                                               ? Colors.white38
-                                              : jobState["save_status"] == "saved_to_phone" 
-                                                  ? Colors.greenAccent 
-                                                  : Colors.white70, 
+                                              : status == "paused"
+                                                  ? Colors.amber
+                                                  : jobState["save_status"] == "saved_to_phone" 
+                                                      ? Colors.greenAccent 
+                                                      : Colors.white70, 
                                       fontWeight: FontWeight.bold,
                                       fontSize: 12,
                                     ),
@@ -407,56 +413,156 @@ class _DownloadDetailScreenState extends State<DownloadDetailScreen> {
                   /// ACTION BUTTON
                   Padding(
                     padding: EdgeInsets.only(bottom: 16, top: 24),
-                    child: GestureDetector(
-                      onTap: () async {
-                        if (isActive) {
-                          try {
-                            await ApiService.cancel(jobState["job_id"]);
-                            if (!context.mounted) return;
-                            setState(() {
-                              jobState["status"] = "cancelled";
-                            });
-                          } catch (e) {
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text("Cancel failed: ${ApiService.formatErrorMessage(e)}")),
-                            );
-                          }
-                        } else {
-                          // Pop with "delete" so parent deletes it
-                          Navigator.pop(context, "delete");
-                        }
-                      },
-                      child: Container(
-                        height: 56,
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          color: isActive ? Colors.white10 : accent,
-                          border: isActive ? Border.all(color: Colors.white24) : null,
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              isActive ? Icons.close_rounded : Icons.delete_outline_rounded,
-                              color: isActive ? Colors.white : Colors.black,
-                              size: 20,
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              isActive ? "CANCEL DOWNLOAD" : "DELETE FROM HISTORY",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: isActive ? Colors.white : Colors.black,
-                                letterSpacing: 1,
+                    child: (isActive || status == "paused")
+                        ? Row(
+                            children: [
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () async {
+                                    try {
+                                      if (status == "paused") {
+                                        await ApiService.resume(jobState["job_id"]);
+                                        if (!mounted) return;
+                                        setState(() {
+                                          jobState["status"] = "starting";
+                                        });
+                                        startPolling();
+                                      } else {
+                                        await ApiService.pause(jobState["job_id"]);
+                                        if (!mounted) return;
+                                        setState(() {
+                                          jobState["status"] = "paused";
+                                        });
+                                        timer?.cancel();
+                                      }
+                                    } catch (e) {
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text("${status == 'paused' ? 'Resume' : 'Pause'} failed: ${ApiService.formatErrorMessage(e)}"),
+                                          backgroundColor: status == 'paused' ? Colors.amber : accent,
+                                        ),
+                                      );
+                                    }
+                                  },
+                                  child: Container(
+                                    height: 56,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(20),
+                                      color: status == "paused" ? Colors.amber : Colors.white10,
+                                      border: status == "paused" ? null : Border.all(color: Colors.white24),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          status == "paused"
+                                              ? Icons.play_arrow_rounded
+                                              : Icons.pause_rounded,
+                                          color: status == "paused" ? Colors.black : Colors.white,
+                                          size: 20,
+                                        ),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          status == "paused" ? "RESUME" : "PAUSE",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                            color: status == "paused" ? Colors.black : Colors.white,
+                                            letterSpacing: 1,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              SizedBox(width: 12),
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () async {
+                                    try {
+                                      await ApiService.cancel(jobState["job_id"]);
+                                      if (!context.mounted) return;
+                                      setState(() {
+                                        jobState["status"] = "cancelled";
+                                      });
+                                      timer?.cancel();
+                                    } catch (e) {
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text("Cancel failed: ${ApiService.formatErrorMessage(e)}"),
+                                          backgroundColor: accent,
+                                        ),
+                                      );
+                                    }
+                                  },
+                                  child: Container(
+                                    height: 56,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(20),
+                                      color: Colors.white10,
+                                      border: Border.all(color: Colors.white24),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.close_rounded,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          "CANCEL",
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                            color: Colors.white,
+                                            letterSpacing: 1,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        : GestureDetector(
+                            onTap: () {
+                              Navigator.pop(context, "delete");
+                            },
+                            child: Container(
+                              height: 56,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(20),
+                                color: accent,
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.delete_outline_rounded,
+                                    color: Colors.black,
+                                    size: 20,
+                                  ),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    "DELETE FROM HISTORY",
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                      color: Colors.black,
+                                      letterSpacing: 1,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
+                          ),
                   ),
                 ],
               ),

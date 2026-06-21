@@ -5,12 +5,16 @@ class DownloadsScreen extends StatelessWidget {
   final List<Map<String, dynamic>> downloads;
   final Function(String) onCancelDownload;
   final Function(Map<String, dynamic>) onDeleteDownload;
+  final Function(String) onPauseDownload;
+  final Function(String) onResumeDownload;
 
   const DownloadsScreen({
     super.key,
     required this.downloads,
     required this.onCancelDownload,
     required this.onDeleteDownload,
+    required this.onPauseDownload,
+    required this.onResumeDownload,
   });
 
   @override
@@ -23,6 +27,11 @@ class DownloadsScreen extends StatelessWidget {
     final activeCount = downloads.where((job) {
       final s = job["status"]?.toString().toLowerCase() ?? "";
       return s == "starting" || s == "downloading" || s == "processing";
+    }).length;
+
+    final pausedCount = downloads.where((job) {
+      final s = job["status"]?.toString().toLowerCase() ?? "";
+      return s == "paused";
     }).length;
 
     final completedCount = downloads.where((job) {
@@ -53,7 +62,7 @@ class DownloadsScreen extends StatelessWidget {
                   const SizedBox(height: 6),
                   if (downloads.isNotEmpty)
                     Text(
-                      "${downloads.length} ${downloads.length == 1 ? 'item' : 'items'} • $activeCount active • $completedCount completed",
+                      "${downloads.length} ${downloads.length == 1 ? 'item' : 'items'} • $activeCount active • ${pausedCount > 0 ? '$pausedCount paused • ' : ''}$completedCount completed",
                       style: const TextStyle(
                         fontSize: 12,
                         color: Colors.white54,
@@ -133,6 +142,7 @@ class DownloadsScreen extends StatelessWidget {
                       final isActive = status == "starting" || 
                           status == "downloading" || 
                           status == "processing";
+                      final isPaused = status == "paused";
                       final progress = (job["progress"] as num?)?.toDouble() ?? 0.0;
                       final title = job["title"] ?? "No Title";
                       final uploader = job["uploader"] ?? "Unknown Creator";
@@ -232,7 +242,7 @@ class DownloadsScreen extends StatelessWidget {
                                         const SizedBox(height: 8),
 
                                         // Dynamic layouts based on status
-                                        if (isActive) ...[
+                                        if (isActive || isPaused) ...[
                                           // Progress bar row
                                           Row(
                                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -242,11 +252,13 @@ class DownloadsScreen extends StatelessWidget {
                                                     ? "STARTING..."
                                                     : status == "processing"
                                                         ? "CONVERTING..."
-                                                        : "DOWNLOADING...",
+                                                        : status == "paused"
+                                                            ? "PAUSED"
+                                                            : "DOWNLOADING...",
                                                 style: TextStyle(
                                                   fontSize: 9,
                                                   fontWeight: FontWeight.bold,
-                                                  color: accent,
+                                                  color: isPaused ? Colors.amber : accent,
                                                   letterSpacing: 0.5,
                                                 ),
                                               ),
@@ -255,7 +267,7 @@ class DownloadsScreen extends StatelessWidget {
                                                 style: TextStyle(
                                                   fontSize: 10,
                                                   fontWeight: FontWeight.bold,
-                                                  color: accent,
+                                                  color: isPaused ? Colors.amber : accent,
                                                 ),
                                               ),
                                             ],
@@ -267,7 +279,7 @@ class DownloadsScreen extends StatelessWidget {
                                               value: progress,
                                               minHeight: 4,
                                               backgroundColor: Colors.white.withValues(alpha: 0.05),
-                                              valueColor: AlwaysStoppedAnimation<Color>(accent),
+                                              valueColor: AlwaysStoppedAnimation<Color>(isPaused ? Colors.amber : accent),
                                             ),
                                           ),
                                           const SizedBox(height: 6),
@@ -375,26 +387,54 @@ class DownloadsScreen extends StatelessWidget {
                                   ),
                                   const SizedBox(width: 12),
 
-                                  // Right side: Action Button (Cancel or Delete)
+                                  // Right side: Action Buttons
                                   Align(
                                     alignment: Alignment.center,
-                                    child: IconButton(
-                                      onPressed: () {
-                                        if (isActive) {
-                                          onCancelDownload(job["job_id"]);
-                                        } else {
-                                          onDeleteDownload(job);
-                                        }
-                                      },
-                                      icon: Icon(
-                                        isActive
-                                            ? Icons.close_rounded
-                                            : Icons.delete_outline_rounded,
-                                        size: 20,
-                                      ),
-                                      color: isActive ? Colors.white38 : Colors.white24,
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (isActive || isPaused) ...[
+                                          IconButton(
+                                            onPressed: () {
+                                              if (isPaused) {
+                                                onResumeDownload(job["job_id"]);
+                                              } else {
+                                                onPauseDownload(job["job_id"]);
+                                              }
+                                            },
+                                            icon: Icon(
+                                              isPaused
+                                                  ? Icons.play_arrow_rounded
+                                                  : Icons.pause_rounded,
+                                              size: 22,
+                                            ),
+                                            color: isPaused ? Colors.amber : accent,
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(),
+                                          ),
+                                          const SizedBox(width: 8),
+                                        ],
+                                        IconButton(
+                                          onPressed: () {
+                                            if (isActive || isPaused) {
+                                              onCancelDownload(job["job_id"]);
+                                            } else {
+                                              onDeleteDownload(job);
+                                            }
+                                          },
+                                          icon: Icon(
+                                            (isActive || isPaused)
+                                                ? Icons.close_rounded
+                                                : Icons.delete_outline_rounded,
+                                            size: 20,
+                                          ),
+                                          color: (isActive || isPaused)
+                                              ? Colors.white38
+                                              : Colors.white24,
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 ],

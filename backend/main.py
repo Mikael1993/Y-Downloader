@@ -177,7 +177,10 @@ def download_task(job_id, url, format_type, quality, concurrent_threads=1):
     except DownloadError as e:
         with jobs_lock:
             if "Cancelled" in str(e):
-                jobs[job_id]["status"] = "cancelled"
+                if jobs[job_id]["status"] == "paused":
+                    pass
+                else:
+                    jobs[job_id]["status"] = "cancelled"
             else:
                 jobs[job_id]["status"] = "error"
                 jobs[job_id]["error"] = str(e)
@@ -387,6 +390,8 @@ def start_download(request: DownloadRequest):
             "url": url,
             "filename": "",
             "format_type": request.format_type,
+            "quality": request.quality,
+            "concurrent_threads": request.concurrent_threads,
         }
 
     threading.Thread(
@@ -428,6 +433,60 @@ def cancel_download(job_id: str):
         jobs[job_id]["cancelled"] = True
 
     return {"message": "Cancelling"}
+
+
+@app.post("/pause/{job_id}")
+def pause_download(job_id: str):
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Invalid job_id",
+            )
+
+        if job["status"] not in {"starting", "downloading", "processing"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Job cannot be paused in {job['status']} state",
+            )
+
+        job["status"] = "paused"
+        job["cancelled"] = True
+
+    return {"message": "Paused"}
+
+
+@app.post("/resume/{job_id}")
+def resume_download(job_id: str):
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Invalid job_id",
+            )
+
+        if job["status"] != "paused":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Job is not paused",
+            )
+
+        job["status"] = "starting"
+        job["cancelled"] = False
+        url = job["url"]
+        format_type = job["format_type"]
+        quality = job.get("quality", "192")
+        concurrent_threads = job.get("concurrent_threads", 1)
+
+    threading.Thread(
+        target=download_task,
+        args=(job_id, url, format_type, quality, concurrent_threads),
+        daemon=True,
+    ).start()
+
+    return {"message": "Resumed"}
 
 
 @app.get("/file/{job_id}")

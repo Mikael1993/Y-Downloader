@@ -323,6 +323,30 @@ class ApiService {
     }
   }
 
+  static Future<void> pause(String jobId) async {
+    final response = await _request(
+      (baseUrl) => http.post(
+        Uri.parse("$baseUrl/pause/$jobId"),
+      ),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractError(response, "Pause failed"));
+    }
+  }
+
+  static Future<void> resume(String jobId) async {
+    final response = await _request(
+      (baseUrl) => http.post(
+        Uri.parse("$baseUrl/resume/$jobId"),
+      ),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractError(response, "Resume failed"));
+    }
+  }
+
   static Future<bool> isWifiConnected() async {
     if (defaultTargetPlatform != TargetPlatform.android) {
       return true;

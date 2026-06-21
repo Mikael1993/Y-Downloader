@@ -4,6 +4,7 @@ import 'home_screen.dart';
 import 'downloads_screen.dart';
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
+import '../services/notification_service.dart';
 
 class MainScreen extends StatefulWidget {
   final Color accentColor;
@@ -31,6 +32,7 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _loadDownloads();
+    NotificationService.requestPermissions();
   }
 
   Future<void> _loadDownloads() async {
@@ -64,10 +66,11 @@ class _MainScreenState extends State<MainScreen> {
       if (!mounted) return;
 
       for (var job in downloads) {
-        // Skip polling for completed, cancelled, or error jobs
+        // Skip polling for completed, cancelled, or error/paused jobs
         final currentStatus = job["status"]?.toString().toLowerCase() ?? "";
         if (currentStatus == "completed" || 
             currentStatus == "cancelled" || 
+            currentStatus == "paused" ||
             (currentStatus == "error" && job["error_checked"] == true)) {
           continue;
         }
@@ -77,6 +80,10 @@ class _MainScreenState extends State<MainScreen> {
               await ApiService.getProgress(job["job_id"]);
 
           if (!mounted) return;
+
+          final newStatus = data["status"]?.toString().toLowerCase() ?? "";
+          final int progressPct = data["status"] == "processing" ? 95 : (data["progress"] ?? 0);
+          final title = job["title"] ?? "Download";
 
           setState(() {
             job["progress"] =
@@ -99,7 +106,9 @@ class _MainScreenState extends State<MainScreen> {
             }
           });
 
-          if (data["status"] == "completed") {
+          if (newStatus == "completed") {
+            NotificationService.showDownloadComplete(job["job_id"], title);
+            
             if (job["saved"] != true && job["save_status"] == null) {
               setState(() {
                 job["save_status"] = "saving_to_phone";
@@ -133,10 +142,19 @@ class _MainScreenState extends State<MainScreen> {
                 }
               });
             }
+          } else if (newStatus == "error") {
+            NotificationService.showDownloadFailed(job["job_id"], title, data["error"]?.toString() ?? "Failed");
+          } else if (newStatus == "cancelled" || newStatus == "paused") {
+            NotificationService.cancelNotification(job["job_id"]);
+          } else {
+            String statusMsg = newStatus == "processing" ? "Converting..." : "Downloading...";
+            NotificationService.showDownloadProgress(job["job_id"], title, progressPct, status: statusMsg);
           }
+
           // Save downloads after each update
           _saveDownloads();
         } catch (e) {
+          final title = job["title"] ?? "Download";
           // Handle 404 errors gracefully - job not found on backend
           if (e.toString().contains("404") || e.toString().contains("not found")) {
             setState(() {
@@ -144,12 +162,14 @@ class _MainScreenState extends State<MainScreen> {
               job["error_message"] = "Job not found on server";
               job["error_checked"] = true;
             });
+            NotificationService.showDownloadFailed(job["job_id"], title, "Job not found on server");
           } else {
             setState(() {
               job["status"] = "error";
               job["error_message"] = e.toString();
               job["error_checked"] = true;
             });
+            NotificationService.showDownloadFailed(job["job_id"], title, e.toString());
           }
           _saveDownloads();
         }
@@ -209,6 +229,49 @@ class _MainScreenState extends State<MainScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text("Cancel failed: ${ApiService.formatErrorMessage(e)}"),
+                backgroundColor: widget.accentColor,
+              ),
+            );
+          }
+        },
+        onPauseDownload: (jobId) async {
+          try {
+            await ApiService.pause(jobId);
+            if (!context.mounted) return;
+            setState(() {
+              final index = downloads.indexWhere((j) => j["job_id"] == jobId);
+              if (index != -1) {
+                downloads[index]["status"] = "paused";
+              }
+            });
+            _saveDownloads();
+          } catch (e) {
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("Pause failed: ${ApiService.formatErrorMessage(e)}"),
+                backgroundColor: widget.accentColor,
+              ),
+            );
+          }
+        },
+        onResumeDownload: (jobId) async {
+          try {
+            await ApiService.resume(jobId);
+            if (!context.mounted) return;
+            setState(() {
+              final index = downloads.indexWhere((j) => j["job_id"] == jobId);
+              if (index != -1) {
+                downloads[index]["status"] = "starting";
+              }
+            });
+            _saveDownloads();
+            startPolling();
+          } catch (e) {
+            if (!context.mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text("Resume failed: ${ApiService.formatErrorMessage(e)}"),
                 backgroundColor: widget.accentColor,
               ),
             );
