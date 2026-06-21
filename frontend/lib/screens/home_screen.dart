@@ -337,7 +337,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: Image.asset(
-                          "assets/icon/new_logo.png",
+                          "assets/icon/latest_icon.png",
                           height: 32,
                           width: 32,
                           fit: BoxFit.cover,
@@ -856,15 +856,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             child: Column(
                               children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: Image.asset(
-                                    "assets/icon/new_logo.png",
-                                    height: 52,
-                                    width: 52,
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
+                                Icon(Icons.library_music_rounded, color: Colors.white24, size: 48),
                                 SizedBox(height: 16),
                                 Text(
                                   "No downloads yet",
