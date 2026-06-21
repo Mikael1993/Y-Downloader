@@ -150,8 +150,25 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> openDetailScreen(Map<String, dynamic> job) async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => DownloadDetailScreen(job: job),
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            DownloadDetailScreen(job: job),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.03, 0),
+                end: Offset.zero,
+              ).animate(CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              )),
+              child: child,
+            ),
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 300),
       ),
     );
     if (result == "delete" && mounted) {
@@ -926,11 +943,21 @@ class _HomeScreenState extends State<HomeScreen> {
                                       SizedBox(
                                         height: 36,
                                         width: 36,
-                                        child: CircularProgressIndicator(
-                                          value: progress,
-                                          strokeWidth: 3.5,
-                                          color: accent,
-                                          backgroundColor: Colors.white10,
+                                        child: TweenAnimationBuilder<double>(
+                                          tween: Tween<double>(
+                                            begin: 0,
+                                            end: (progress as num).toDouble(),
+                                          ),
+                                          duration: const Duration(milliseconds: 600),
+                                          curve: Curves.easeOutCubic,
+                                          builder: (context, value, child) {
+                                            return CircularProgressIndicator(
+                                              value: value,
+                                              strokeWidth: 3.5,
+                                              color: accent,
+                                              backgroundColor: Colors.white10,
+                                            );
+                                          },
                                         ),
                                       ),
                                       SizedBox(width: 14),
