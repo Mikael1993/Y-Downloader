@@ -331,18 +331,34 @@ class _HomeScreenState extends State<HomeScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Icon(Icons.menu, color: Colors.white),
-                  Column(
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text("YUUTOOB",
-                          style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 3)),
-                      Text("DOWNLOADER",
-                          style: TextStyle(
-                              fontSize: 10,
-                              color: accent,
-                              letterSpacing: 2))
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.asset(
+                          "assets/icon/new_logo.png",
+                          height: 32,
+                          width: 32,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text("YUUTOOB",
+                              style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 2)),
+                          Text("DOWNLOADER",
+                              style: TextStyle(
+                                  fontSize: 8,
+                                  color: accent,
+                                  letterSpacing: 1))
+                        ],
+                      ),
                     ],
                   ),
                   IconButton(
@@ -840,7 +856,15 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             child: Column(
                               children: [
-                                Icon(Icons.library_music_rounded, color: Colors.white24, size: 48),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Image.asset(
+                                    "assets/icon/new_logo.png",
+                                    height: 52,
+                                    width: 52,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
                                 SizedBox(height: 16),
                                 Text(
                                   "No downloads yet",
