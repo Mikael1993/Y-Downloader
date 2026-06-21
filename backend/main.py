@@ -19,19 +19,19 @@ import traceback
 
 app = FastAPI()
 
+BASE_DIR = Path(__file__).resolve().parent
+cookies_file = BASE_DIR / "cookies.txt"
+downloads_dir = BASE_DIR / "downloads"
+downloads_dir.mkdir(exist_ok=True)
+
 # Startup logic: check if YOUTUBE_COOKIES_CONTENT env var is set and write to cookies.txt
 cookies_content = os.getenv("YOUTUBE_COOKIES_CONTENT")
 if cookies_content:
     try:
-        cookies_file = Path("cookies.txt")
         cookies_file.write_text(cookies_content.strip() + "\n", encoding="utf-8")
         print("Successfully wrote YOUTUBE_COOKIES_CONTENT environment variable to cookies.txt")
     except Exception as e:
         print(f"Error writing YOUTUBE_COOKIES_CONTENT to cookies.txt: {e}")
-
-
-downloads_dir = Path("downloads")
-downloads_dir.mkdir(exist_ok=True)
 
 allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
 allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
@@ -121,10 +121,14 @@ def download_task(job_id, url, format_type, quality, concurrent_threads=1):
         "concurrent_fragment_downloads": concurrent_threads,
     }
 
-    cookies_file = Path("cookies.txt")
     if cookies_file.exists():
         ydl_opts["cookiefile"] = str(cookies_file)
         ydl_opts["remote_components"] = ["ejs:github"]
+        ydl_opts["extractor_args"] = {
+            "youtube": {
+                "player_client": ["android", "ios"]
+            }
+        }
     else:
         # Fallback to mobile player clients to bypass bot block without cookies
         ydl_opts["extractor_args"] = {
@@ -216,10 +220,20 @@ def search_videos(query: str):
             "js_runtimes": {"deno": {}, "node": {}},
         }
 
-        cookies_file = Path("cookies.txt")
         if cookies_file.exists():
             ydl_opts["cookiefile"] = str(cookies_file)
             ydl_opts["remote_components"] = ["ejs:github"]
+            ydl_opts["extractor_args"] = {
+                "youtube": {
+                    "player_client": ["android", "ios"]
+                }
+            }
+        else:
+            ydl_opts["extractor_args"] = {
+                "youtube": {
+                    "player_client": ["ios", "android_music", "web"]
+                }
+            }
 
         with yt_dlp.YoutubeDL(dict(ydl_opts)) as ydl:  # type: ignore
             search_data = ydl.extract_info(f"ytsearch5:{query}", download=False) or {}
@@ -281,10 +295,14 @@ def get_video_info(url: str):
             "js_runtimes": {"deno": {}, "node": {}},
         }
 
-        cookies_file = Path("cookies.txt")
         if cookies_file.exists():
             ydl_opts["cookiefile"] = str(cookies_file)
             ydl_opts["remote_components"] = ["ejs:github"]
+            ydl_opts["extractor_args"] = {
+                "youtube": {
+                    "player_client": ["android", "ios"]
+                }
+            }
         else:
             # Fallback to mobile player clients to bypass bot block without cookies
             ydl_opts["extractor_args"] = {
