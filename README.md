@@ -1,4 +1,4 @@
-# 🎵 YT Downloader App
+# YT Downloader App
 
 A full-stack mobile application that allows users to search, preview, and download YouTube audio directly to their device with real-time progress tracking.
 
@@ -14,6 +14,28 @@ A full-stack mobile application that allows users to search, preview, and downlo
 * **Clipboard auto-detection** for quick link input
 * **Download history tracking**
 * **Cancel downloads anytime**
+
+---
+
+## Screenshots
+
+### Search & Discovery
+
+| Home Screen | Search Results | Video Details |
+| :---: | :---: | :---: |
+| <img src="assets/screenshots/home_screen.jpg" width="250" /> | <img src="assets/screenshots/search_results.jpg" width="250" /> | <img src="assets/screenshots/video_detail.jpg" width="250" /> |
+
+### Quality Selection & Downloads
+
+| Select Quality | Active Download | Download Completed |
+| :---: | :---: | :---: |
+| <img src="assets/screenshots/select_quality.jpg" width="250" /> | <img src="assets/screenshots/downloads_active.jpg" width="250" /> | <img src="assets/screenshots/downloads_completed.jpg" width="250" /> |
+
+### Details & Settings
+
+| Download Progress Details | Settings Screen |
+| :---: | :---: |
+| <img src="assets/screenshots/download_details.jpg" width="250" /> | <img src="assets/screenshots/settings_screen.jpg" width="250" /> |
 
 ---
 
@@ -106,7 +128,7 @@ build/app/outputs/flutter-apk/app-release.apk
 
 ---
 
-## 🔒 Security Considerations
+## Security Considerations
 
 * **CORS Restrictions**: By default, if the `ALLOWED_ORIGINS` environment variable is not defined, the server defaults to allowing cross-origin requests from any origin (`*`). For production or shared environments, restrict origins by setting the environment variable `ALLOWED_ORIGINS` to a comma-separated list of allowed origins (e.g. `ALLOWED_ORIGINS=https://app.yourdomain.com`).
 * **Path Traversal Protection**: The backend enforces that only files generated inside the dedicated `downloads/` folder can be retrieved via the `/file/{job_id}` endpoint, resolving all paths and rejecting any outside file reads.
