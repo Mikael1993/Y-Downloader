@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 import '../services/storage_service.dart';
 import 'download_detail_screen.dart';
 import 'settings_screen.dart';
+import '../widgets/format_selector.dart';
 import '../widgets/quality_selector.dart';
 import 'playlist_screen.dart';
 
@@ -90,7 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    // Faster 150ms debounce instead of 300ms
+    // Faster 150ms debounce
     _debounceTimer = Timer(const Duration(milliseconds: 150), () async {
       try {
         final list = await ApiService.getSuggestions(query);
@@ -112,7 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void startClipboardMonitoring() {
-    clipboardTimer = Timer.periodic(Duration(seconds: 2), (_) async {
+    clipboardTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
       try {
         final data = await Clipboard.getData('text/plain');
         if (data == null || data.text == null) return;
@@ -134,8 +135,8 @@ class _HomeScreenState extends State<HomeScreen> {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text("YouTube link ready in clipboard"),
-                  duration: Duration(seconds: 2),
+                  content: const Text("YouTube link ready in clipboard"),
+                  duration: const Duration(seconds: 2),
                   backgroundColor: widget.accentColor,
                 ),
               );
@@ -268,7 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (!ApiService.isYoutubeUrl(text)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("No valid YouTube link in clipboard")),
+        const SnackBar(content: Text("No valid YouTube link in clipboard")),
       );
       return;
     }
@@ -280,9 +281,11 @@ class _HomeScreenState extends State<HomeScreen> {
     await handleInput();
   }
 
-  Future<void> startDownload(String url, String title,
-      {String quality = "192"}) async {
-    print("START DOWNLOAD: $url");
+  Future<void> startDownload(String url, String title, {
+    String format = "mp3",
+    String quality = "192",
+  }) async {
+    debugPrint("START DOWNLOAD: $url | Format: $format | Quality: $quality");
 
     // Check WiFi only restriction
     final isWifiOnly = StorageService.getWifiOnly();
@@ -316,6 +319,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final jobId = await ApiService.startDownload(
         url,
+        format: format,
         quality: quality,
         concurrentThreads: concurrentThreads,
       );
@@ -326,10 +330,19 @@ class _HomeScreenState extends State<HomeScreen> {
         "progress": 0.0,
         "status": "starting",
         "saved": false,
-        "format_type": "mp3",
+        "format_type": format,
         "thumbnail": selectedVideo?["thumbnail"] ?? "",
         "uploader": selectedVideo?["uploader"] ?? "Unknown",
       });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Download started: $format ($quality)"),
+          backgroundColor: widget.accentColor,
+          duration: const Duration(seconds: 2),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -346,7 +359,7 @@ class _HomeScreenState extends State<HomeScreen> {
       width: 80,
       height: 50,
       color: Colors.grey[800],
-      child: Icon(Icons.image, color: Colors.white54),
+      child: const Icon(Icons.image, color: Colors.white54),
     );
   }
 
@@ -358,14 +371,14 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: Colors.black,
       body: SafeArea(
         child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           child: Column(
             children: [
               /// HEADER
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Icon(Icons.menu, color: Colors.white),
+                  const Icon(Icons.menu, color: Colors.white),
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -417,39 +430,39 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
 
-              SizedBox(height: 30),
+              const SizedBox(height: 30),
 
-              Text("SEARCH OR PASTE",
+              const Text("SEARCH OR PASTE",
                   style: TextStyle(
                       fontSize: 11,
                       letterSpacing: 2,
                       color: Colors.white54)),
 
-              SizedBox(height: 18),
+              const SizedBox(height: 18),
 
               /// SEARCH BAR
               Container(
-                padding: EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 height: 64,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(40),
-                  gradient: LinearGradient(
+                  gradient: const LinearGradient(
                     colors: [Color(0xFF1A1A1A), Color(0xFF242424)],
                   ),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.search, color: Colors.white54),
-                    SizedBox(width: 12),
+                    const Icon(Icons.search, color: Colors.white54),
+                    const SizedBox(width: 12),
 
                     Expanded(
                       child: TextField(
                         controller: controller,
-                        style: TextStyle(color: Colors.white),
+                        style: const TextStyle(color: Colors.white),
                         textInputAction: TextInputAction.search,
                         onSubmitted: (_) => handleInput(),
                         onChanged: _onSearchTextChanged,
-                        decoration: InputDecoration(
+                        decoration: const InputDecoration(
                           border: InputBorder.none,
                           hintText: "Enter YouTube link or search term...",
                           hintStyle: TextStyle(color: Colors.white38),
@@ -461,12 +474,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       onTap: handleInput,
                       child: Container(
                         padding:
-                            EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
                           color: accent,
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: Text("SEARCH",
+                        child: const Text("SEARCH",
                             style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 12,
@@ -477,15 +490,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-              SizedBox(height: 20),
+              const SizedBox(height: 20),
 
               if (loading) CircularProgressIndicator(color: accent),
 
               if (!loading && statusMessage != null)
                 Container(
                   width: double.infinity,
-                  margin: EdgeInsets.only(bottom: 20),
-                  padding: EdgeInsets.all(16),
+                  margin: const EdgeInsets.only(bottom: 20),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.06),
                     borderRadius: BorderRadius.circular(24),
@@ -493,7 +506,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: Text(
                     statusMessage!,
-                    style: TextStyle(color: Colors.white70),
+                    style: const TextStyle(color: Colors.white70),
                   ),
                 ),
 
@@ -603,13 +616,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Align(
                           alignment: Alignment.centerLeft,
                           child: Container(
-                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.arrow_back, color: Colors.white54, size: 20),
-                                SizedBox(width: 4),
-                                Text("BACK", style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 1)),
+                                const Icon(Icons.arrow_back, color: Colors.white54, size: 20),
+                                const SizedBox(width: 4),
+                                const Text("BACK", style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 1)),
                               ],
                             ),
                           ),
@@ -637,13 +650,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                   : fallbackThumb(),
 
                               title: Text(title,
-                                  style: TextStyle(color: Colors.white)),
+                                  style: const TextStyle(color: Colors.white)),
 
                               subtitle: Row(
                                 children: [
                                   Expanded(
                                     child: Text(uploader,
-                                        style: TextStyle(color: Colors.white54)),
+                                        style: const TextStyle(color: Colors.white54)),
                                   ),
                                   if (v["type"] == "playlist") ...[
                                     const SizedBox(width: 8),
@@ -674,7 +687,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
 
                               onTap: () {
-                                print("SELECTED ITEM: $v");
+                                debugPrint("SELECTED ITEM: $v");
                                 if (v["type"] == "playlist") {
                                   Navigator.push(
                                     context,
@@ -726,19 +739,19 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Container(
-                              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.arrow_back, color: Colors.white54, size: 20),
-                                  SizedBox(width: 4),
-                                  Text("BACK", style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 1)),
+                                  const Icon(Icons.arrow_back, color: Colors.white54, size: 20),
+                                  const SizedBox(width: 4),
+                                  const Text("BACK", style: TextStyle(color: Colors.white54, fontSize: 12, letterSpacing: 1)),
                                 ],
                               ),
                             ),
                           ),
                         ),
-                        SizedBox(height: 12),
+                        const SizedBox(height: 12),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(24),
                           child: Image.network(
@@ -753,31 +766,31 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
 
-                        SizedBox(height: 16),
+                        const SizedBox(height: 16),
 
                         Text(
                           selectedVideo!["title"] ?? "No title",
                           textAlign: TextAlign.center,
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
 
-                        SizedBox(height: 14),
+                        const SizedBox(height: 14),
 
                         GestureDetector(
                           onTap: () {
                             final url = selectedVideo!["url"];
 
-                            print("DOWNLOAD URL: $url");
+                            debugPrint("DOWNLOAD URL: $url");
 
                             if (url == null || url.toString().isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text("Invalid video URL")),
+                                const SnackBar(content: Text("Invalid video URL")),
                               );
                               return;
                             }
@@ -797,15 +810,17 @@ class _HomeScreenState extends State<HomeScreen> {
                               context: context,
                               backgroundColor: Colors.transparent,
                               isScrollControlled: true,
-                              builder: (_) => QualitySelector(
+                              builder: (_) => FormatSelector(
                                 title: selectedVideo!["title"],
                                 thumbnailUrl: selectedVideo!["thumbnail"],
                                 uploader: selectedVideo!["uploader"],
                                 duration: duration,
-                                onSelect: (quality) {
+                                videoUrl: url,
+                                onSelect: (format, quality) {
                                   startDownload(
                                     url,
                                     selectedVideo!["title"] ?? "video",
+                                    format: format,
                                     quality: quality,
                                   );
                                 },
@@ -813,14 +828,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             );
                           },
                           child: Container(
-                            margin: EdgeInsets.only(top: 12),
-                            padding: EdgeInsets.symmetric(vertical: 12),
+                            margin: const EdgeInsets.only(top: 12),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
                             width: double.infinity,
                             decoration: BoxDecoration(
                               color: accent,
                               borderRadius: BorderRadius.circular(20),
                             ),
-                            child: Center(
+                            child: const Center(
                               child: Text(
                                 "DOWNLOAD",
                                 style: TextStyle(
@@ -849,11 +864,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         if (detectedClipboardLink != null) ...[
                           Container(
                             width: double.infinity,
-                            padding: EdgeInsets.all(18),
+                            padding: const EdgeInsets.all(18),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(24),
                               border: Border.all(color: accent.withOpacity(0.4), width: 1.5),
-                              gradient: LinearGradient(
+                              gradient: const LinearGradient(
                                 colors: [Color(0xFF251010), Color(0xFF140808)],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
@@ -865,8 +880,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                 Row(
                                   children: [
                                     Icon(Icons.link, color: accent, size: 20),
-                                    SizedBox(width: 8),
-                                    Text(
+                                    const SizedBox(width: 8),
+                                    const Text(
                                       "LINK DETECTED",
                                       style: TextStyle(
                                         color: Colors.white,
@@ -875,37 +890,37 @@ class _HomeScreenState extends State<HomeScreen> {
                                         letterSpacing: 1.5,
                                       ),
                                     ),
-                                    Spacer(),
+                                    const Spacer(),
                                     GestureDetector(
                                       onTap: () {
                                         setState(() {
                                           detectedClipboardLink = null;
                                         });
                                       },
-                                      child: Icon(Icons.close, color: Colors.white38, size: 18),
+                                      child: const Icon(Icons.close, color: Colors.white38, size: 18),
                                     ),
                                   ],
                                 ),
-                                SizedBox(height: 10),
+                                const SizedBox(height: 10),
                                 Text(
                                   detectedClipboardLink!,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                                  style: const TextStyle(color: Colors.white70, fontSize: 13),
                                 ),
-                                SizedBox(height: 14),
+                                const SizedBox(height: 14),
                                 Row(
                                   children: [
                                     Expanded(
                                       child: GestureDetector(
                                         onTap: pasteFromClipboard,
                                         child: Container(
-                                          padding: EdgeInsets.symmetric(vertical: 10),
+                                          padding: const EdgeInsets.symmetric(vertical: 10),
                                           decoration: BoxDecoration(
                                             color: accent,
                                             borderRadius: BorderRadius.circular(14),
                                           ),
-                                          child: Center(
+                                          child: const Center(
                                             child: Text(
                                               "PASTE & SEARCH",
                                               style: TextStyle(
@@ -923,13 +938,13 @@ class _HomeScreenState extends State<HomeScreen> {
                               ],
                             ),
                           ),
-                          SizedBox(height: 24),
+                          const SizedBox(height: 24),
                         ],
 
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
+                            const Text(
                               "RECENT DOWNLOADS",
                               style: TextStyle(
                                 fontSize: 12,
@@ -954,29 +969,29 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
 
-                        SizedBox(height: 16),
+                        const SizedBox(height: 16),
 
                         if (widget.downloads.isEmpty)
                           Container(
                             width: double.infinity,
-                            padding: EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+                            padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
                             decoration: BoxDecoration(
-                              color: Color(0xFF161618),
+                              color: const Color(0xFF161618),
                               borderRadius: BorderRadius.circular(24),
                             ),
                             child: Column(
                               children: [
-                                Icon(Icons.library_music_rounded, color: Colors.white24, size: 48),
-                                SizedBox(height: 16),
-                                Text(
+                                const Icon(Icons.library_music_rounded, color: Colors.white24, size: 48),
+                                const SizedBox(height: 16),
+                                const Text(
                                   "No downloads yet",
                                   style: TextStyle(
                                     color: Colors.white70,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                SizedBox(height: 8),
-                                Text(
+                                const SizedBox(height: 8),
+                                const Text(
                                   "Search or paste a YouTube URL to get started.",
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
@@ -996,65 +1011,81 @@ class _HomeScreenState extends State<HomeScreen> {
                               return GestureDetector(
                                 onTap: () => openDetailScreen(job),
                                 child: Container(
-                                  margin: EdgeInsets.only(bottom: 12),
-                                  padding: EdgeInsets.all(14),
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  padding: const EdgeInsets.all(14),
                                   decoration: BoxDecoration(
-                                    color: Color(0xFF161618),
-                                    borderRadius: BorderRadius.circular(18),
+                                    color: const Color(0xFF161618),
+                                    borderRadius: BorderRadius.circular(20),
                                   ),
                                   child: Row(
                                     children: [
-                                      SizedBox(
-                                        height: 36,
-                                        width: 36,
-                                        child: TweenAnimationBuilder<double>(
-                                          tween: Tween<double>(
-                                            begin: 0,
-                                            end: (progress as num).toDouble(),
+                                      if (job["thumbnail"] != null && job["thumbnail"].toString().isNotEmpty)
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: Image.network(
+                                            job["thumbnail"],
+                                            width: 60,
+                                            height: 40,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) => Container(
+                                              width: 60,
+                                              height: 40,
+                                              color: Colors.white10,
+                                              child: const Icon(Icons.image, color: Colors.white24, size: 20),
+                                            ),
                                           ),
-                                          duration: const Duration(milliseconds: 600),
-                                          curve: Curves.easeOutCubic,
-                                          builder: (context, value, child) {
-                                            return CircularProgressIndicator(
-                                              value: value,
-                                              strokeWidth: 3.5,
-                                              color: accent,
-                                              backgroundColor: Colors.white10,
-                                            );
-                                          },
+                                        )
+                                      else
+                                        Container(
+                                          width: 60,
+                                          height: 40,
+                                          decoration: BoxDecoration(
+                                            color: Colors.white10,
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          child: const Icon(Icons.image, color: Colors.white24, size: 20),
                                         ),
-                                      ),
-                                      SizedBox(width: 14),
+                                      const SizedBox(width: 12),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              job["title"] ?? "No Title",
+                                              job["title"] ?? "Download",
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
+                                              style: const TextStyle(
                                                 color: Colors.white,
+                                                fontSize: 12,
                                                 fontWeight: FontWeight.bold,
-                                                fontSize: 13,
                                               ),
                                             ),
-                                            SizedBox(height: 4),
-                                            Text(
-                                              status.toUpperCase(),
-                                              style: TextStyle(
-                                                color: status == "completed" 
-                                                    ? Colors.greenAccent 
-                                                    : Colors.white54,
-                                                fontSize: 9,
-                                                fontWeight: FontWeight.bold,
-                                                letterSpacing: 1,
-                                              ),
+                                            const SizedBox(height: 4),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: ClipRRect(
+                                                    borderRadius: BorderRadius.circular(4),
+                                                    child: LinearProgressIndicator(
+                                                      value: progress,
+                                                      backgroundColor: Colors.white10,
+                                                      valueColor: AlwaysStoppedAnimation<Color>(accent),
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                  "${(progress * 100).toStringAsFixed(0)}%",
+                                                  style: const TextStyle(
+                                                    fontSize: 10,
+                                                    color: Colors.white54,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ],
                                         ),
                                       ),
-                                      Icon(Icons.chevron_right_rounded, color: Colors.white38, size: 20),
                                     ],
                                   ),
                                 ),
