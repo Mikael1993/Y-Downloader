@@ -252,8 +252,8 @@ class ApiService {
 
     final baseUrl = _activeBaseUrl ?? _baseUrlCandidates.first;
     final url = "$baseUrl/file/$jobId";
-    final extension = formatType == "mp4" ? "mp4" : "mp3";
-    final mimeType = formatType == "mp4" ? "video/mp4" : "audio/mpeg";
+    final extension = _getFileExtension(formatType);
+    final mimeType = _getMimeType(formatType);
     final fileName = "${_safeFileName(title)}.$extension";
 
     try {
@@ -276,6 +276,34 @@ class ApiService {
           fallbackMessage: "Phone saving is unavailable in this build.",
         ),
       );
+    }
+  }
+
+  static String _getFileExtension(String formatType) {
+    switch (formatType) {
+      case "mp4":
+        return "mp4";
+      case "webm":
+        return "webm";
+      case "m4a":
+        return "m4a";
+      case "mp3":
+      default:
+        return "mp3";
+    }
+  }
+
+  static String _getMimeType(String formatType) {
+    switch (formatType) {
+      case "mp4":
+        return "video/mp4";
+      case "webm":
+        return "video/webm";
+      case "m4a":
+        return "audio/mp4";
+      case "mp3":
+      default:
+        return "audio/mpeg";
     }
   }
 
@@ -427,6 +455,22 @@ class ApiService {
 
     if (response.statusCode != 200) {
       throw Exception(_extractError(response, "Playlist download failed"));
+    }
+
+    return jsonDecode(response.body);
+  }
+
+  static Future<Map<String, dynamic>> fetchAvailableFormats(String url) async {
+    final response = await _request(
+      (baseUrl) => http.get(
+        Uri.parse("$baseUrl/formats").replace(
+          queryParameters: {"url": url},
+        ),
+      ),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractError(response, "Failed to fetch available formats"));
     }
 
     return jsonDecode(response.body);
