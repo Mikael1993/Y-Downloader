@@ -60,21 +60,34 @@ jobs_lock = threading.Lock()
 media_types = {
     "mp3": "audio/mpeg",
     "mp4": "video/mp4",
+    "webm": "video/webm",
+    "m4a": "audio/mp4",
 }
 
 
 class DownloadRequest(BaseModel):
     url: str
-    format_type: Literal["mp3", "mp4"] = "mp3"
-    quality: Literal["128", "192", "256", "320"] = "192"
+    format_type: Literal["mp3", "mp4", "webm", "m4a", "best"] = "mp3"
+    quality: Literal["128", "192", "256", "320", "best"] = "192"
     concurrent_threads: int = 1
 
 
 class PlaylistDownloadRequest(BaseModel):
     url: str
-    format_type: Literal["mp3", "mp4"] = "mp3"
-    quality: Literal["128", "192", "256", "320"] = "192"
+    format_type: Literal["mp3", "mp4", "webm", "m4a", "best"] = "mp3"
+    quality: Literal["128", "192", "256", "320", "best"] = "192"
     concurrent_threads: int = 1
+
+
+class FormatInfo(BaseModel):
+    format_id: str
+    ext: str
+    format: str
+    resolution: str = ""
+    fps: str = ""
+    audio_codec: str = ""
+    video_codec: str = ""
+    filesize: str = ""
 
 
 def require_binary(binary_name, detail):
@@ -87,7 +100,7 @@ def require_binary(binary_name, detail):
     )
 
 
-def download_task(job_id, url, format_type, quality, concurrent_threads=1):
+def download_task(job_id, url, format_type, quality, concurrent_threads=1, format_id=None):
     final_file_path = {"path": ""}
 
     def progress_hook(d):
@@ -139,6 +152,7 @@ def download_task(job_id, url, format_type, quality, concurrent_threads=1):
         ydl_opts["cookiefile"] = str(cookies_file)
         ydl_opts["remote_components"] = ["ejs:github"]
 
+    # Handle different format types
     if format_type == "mp3":
         ydl_opts.update({
             "format": "bestaudio/best",
@@ -148,11 +162,34 @@ def download_task(job_id, url, format_type, quality, concurrent_threads=1):
                 "preferredquality": quality,
             }],
         })
-    else:
+    elif format_type == "m4a":
         ydl_opts.update({
-            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-            "merge_output_format": "mp4",
+            "format": "bestaudio/best",
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "m4a",
+                "preferredquality": quality,
+            }],
         })
+    elif format_type == "webm":
+        ydl_opts.update({
+            "format": "bestvideo[ext=webm]+bestaudio[ext=webm]/best[ext=webm]/best",
+            "merge_output_format": "webm",
+        })
+    elif format_type == "best":
+        # Use specific format_id if provided
+        if format_id:
+            ydl_opts["format"] = format_id
+        else:
+            ydl_opts["format"] = "best"
+    else:  # mp4 or default
+        if format_id:
+            ydl_opts["format"] = format_id
+        else:
+            ydl_opts.update({
+                "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "merge_output_format": "mp4",
+            })
 
     retries = 1
     while retries >= 0:
@@ -165,6 +202,9 @@ def download_task(job_id, url, format_type, quality, concurrent_threads=1):
             if format_type == "mp3" and file_path:
                 base, _ = os.path.splitext(file_path)
                 file_path = base + ".mp3"
+            elif format_type == "m4a" and file_path:
+                base, _ = os.path.splitext(file_path)
+                file_path = base + ".m4a"
 
             for _ in range(12):
                 if file_path and os.path.exists(file_path):
@@ -357,6 +397,117 @@ def get_video_info(url: str):
         )
 
 
+@app.get("/formats")
+def get_available_formats(url: str):
+    """Get all available formats and qualities for a video"""
+    url = url.strip()
+    if not url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="URL is required.",
+        )
+
+    if not shutil.which("node"):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Node.js is required on the backend for formats request.",
+        )
+
+    try:
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "js_runtimes": {"deno": {}, "node": {}},
+        }
+
+        if cookies_file.exists():
+            ydl_opts["cookiefile"] = str(cookies_file)
+            ydl_opts["remote_components"] = ["ejs:github"]
+
+        with yt_dlp.YoutubeDL(dict(ydl_opts)) as ydl:  # type: ignore
+            info = ydl.extract_info(url, download=False) or {}
+
+        formats = info.get("formats", [])
+        video_info = {
+            "title": info.get("title", "Unknown"),
+            "duration": info.get("duration", 0),
+            "available_formats": []
+        }
+
+        # Group formats by type
+        format_groups = {
+            "video_with_audio": [],
+            "video_only": [],
+            "audio_only": [],
+        }
+
+        for fmt in formats:
+            if not fmt:
+                continue
+            
+            format_id = fmt.get("format_id", "")
+            ext = fmt.get("ext", "")
+            vcodec = fmt.get("vcodec", "none")
+            acodec = fmt.get("acodec", "none")
+            resolution = fmt.get("format_note", "")
+            height = fmt.get("height", "")
+            fps = fmt.get("fps", "")
+            filesize = fmt.get("filesize", 0)
+            
+            # Format filesize nicely
+            if filesize:
+                if filesize > 1024 * 1024 * 1024:
+                    filesize_str = f"{filesize / (1024 * 1024 * 1024):.2f} GB"
+                elif filesize > 1024 * 1024:
+                    filesize_str = f"{filesize / (1024 * 1024):.2f} MB"
+                elif filesize > 1024:
+                    filesize_str = f"{filesize / 1024:.2f} KB"
+                else:
+                    filesize_str = f"{filesize} B"
+            else:
+                filesize_str = "Unknown"
+
+            format_info = {
+                "format_id": format_id,
+                "ext": ext,
+                "resolution": resolution or (f"{height}p" if height else "Unknown"),
+                "fps": str(fps) if fps else "",
+                "audio_codec": acodec if acodec != "none" else "",
+                "video_codec": vcodec if vcodec != "none" else "",
+                "filesize": filesize_str,
+                "format": fmt.get("format", ""),
+                "description": f"{ext.upper()} - {resolution or (f'{height}p' if height else 'Unknown')}{f' {fps}fps' if fps else ''}"
+            }
+
+            if vcodec != "none" and acodec != "none":
+                format_groups["video_with_audio"].append(format_info)
+            elif vcodec != "none":
+                format_groups["video_only"].append(format_info)
+            elif acodec != "none":
+                format_groups["audio_only"].append(format_info)
+
+        video_info["available_formats"] = {
+            "video_with_audio": format_groups["video_with_audio"][:10],  # Limit to top 10
+            "video_only": format_groups["video_only"][:10],
+            "audio_only": format_groups["audio_only"][:10],
+        }
+
+        return video_info
+
+    except Exception as e:
+        traceback.print_exc()
+        err_msg = str(e)
+        if cookies_file.exists():
+            err_msg += f" (Cookies file size: {cookies_file.stat().st_size} bytes)"
+        else:
+            err_msg += " (No cookies file found)"
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=err_msg,
+        )
+
+
 @app.get("/playlist")
 def get_playlist_info(url: str):
     url = url.strip()
@@ -463,8 +614,8 @@ def download_playlist(request: PlaylistDownloadRequest):
 
     require_binary("node", "Node.js is required on the backend for download requests.")
 
-    if request.format_type == "mp3":
-        require_binary("ffmpeg", "FFmpeg is required on the backend for mp3 downloads.")
+    if request.format_type in ["mp3", "m4a"]:
+        require_binary("ffmpeg", "FFmpeg is required on the backend for audio downloads.")
 
     # First extract the playlist info to get individual video URLs
     try:
@@ -623,8 +774,8 @@ def start_download(request: DownloadRequest):
 
     require_binary("node", "Node.js is required on the backend for download requests.")
 
-    if request.format_type == "mp3":
-        require_binary("ffmpeg", "FFmpeg is required on the backend for mp3 downloads.")
+    if request.format_type in ["mp3", "m4a"]:
+        require_binary("ffmpeg", "FFmpeg is required on the backend for audio downloads.")
 
     job_id = str(uuid.uuid4())
 
